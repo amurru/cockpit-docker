@@ -41,8 +41,10 @@ class Images extends React.Component {
 
     downloadImage(imageName, imageTag, system) {
         let pullImageId = imageName;
-        if (imageTag)
-            pullImageId += ":" + imageTag;
+        if (!imageTag)
+            imageTag = "latest";
+
+        pullImageId += ":" + imageTag;
 
         this.setState({ imageDownloadInProgress: imageName });
         client.pullImage(system, pullImageId)
@@ -81,7 +83,7 @@ class Images extends React.Component {
         if (imageContainerList === null) {
             return { title: _("unused"), count: 0 };
         }
-        const containers = imageContainerList[image.Id + image.isSystem.toString()];
+        const containers = imageContainerList[image.Id];
         if (containers !== undefined) {
             const title = cockpit.format(cockpit.ngettext("$0 container", "$0 containers", containers.length), containers.length);
             return { title, count: containers.length };
@@ -110,7 +112,7 @@ class Images extends React.Component {
                 imageStats.imagesTotal += 1;
                 imageStats.imagesSize += image.Size;
 
-                const usedBy = imageContainerList[image.Id + image.isSystem.toString()];
+                const usedBy = imageContainerList[image.Id];
                 if (usedBy === undefined) {
                     imageStats.unusedTotal += 1;
                     imageStats.unusedSize += image.Size;
@@ -128,7 +130,6 @@ class Images extends React.Component {
 
         const columns = [
             { title: utils.image_name(image), header: true, props: { modifier: "breakWord" } },
-            { title: image.isSystem ? _("system") : <div><span className="ct-grey-text">{_("user:")} </span>{this.props.user}</div>, props: { className: "ignore-pixels", modifier: "nowrap" } },
             { title: utils.localize_time(image.Created), props: { className: "ignore-pixels" } },
             { title: utils.truncate_id(image.Id), props: { className: "ignore-pixels" } },
             { title: cockpit.format_bytes(image.Size, 1000), props: { className: "ignore-pixels", modifier: "nowrap" } },
@@ -138,8 +139,8 @@ class Images extends React.Component {
                                      registries={this.props.registries} user={this.props.user}
                                      userServiceAvailable={this.props.userServiceAvailable}
                                      systemServiceAvailable={this.props.systemServiceAvailable}
-                                     podmanRestartAvailable={this.props.podmanRestartAvailable}
-                                     userPodmanRestartAvailable={this.props.userPodmanRestartAvailable}
+                                     dockerRestartAvailable={this.props.dockerRestartAvailable}
+                                     userDockerRestartAvailable={this.props.userDockerRestartAvailable}
                                      userLingeringEnabled={this.props.userLingeringEnabled}
                                      version={this.props.version} />,
                 props: { className: 'pf-c-table__action content-action' }
@@ -151,7 +152,7 @@ class Images extends React.Component {
             renderer: ImageDetails,
             data: {
                 image,
-                containers: this.props.imageContainerList !== null ? this.props.imageContainerList[image.Id + image.isSystem.toString()] : null,
+                containers: this.props.imageContainerList !== null ? this.props.imageContainerList[image.Id] : null,
                 showAll: this.props.showAll,
             }
         });
@@ -168,8 +169,8 @@ class Images extends React.Component {
                                 tabRenderers={tabs} />,
             columns,
             props: {
-                key: image.Id + image.isSystem.toString(),
-                "data-row-id": image.Id + image.isSystem.toString(),
+                key: image.Id,
+                "data-row-id": image.Id,
             },
         };
     }
@@ -177,7 +178,6 @@ class Images extends React.Component {
     render() {
         const columnTitles = [
             { title: _("Image"), transforms: [cellWidth(20)] },
-            { title: _("Owner"), props: { className: "ignore-pixels" } },
             { title: _("Created"), props: { className: "ignore-pixels", width: 15 } },
             { title: _("ID"), props: { className: "ignore-pixels" } },
             { title: _("Disk space"), props: { className: "ignore-pixels" } },
@@ -194,13 +194,6 @@ class Images extends React.Component {
         let filtered = [];
         if (this.props.images !== null) {
             filtered = Object.keys(this.props.images).filter(id => {
-                if (this.props.userServiceAvailable && this.props.systemServiceAvailable && this.props.ownerFilter !== "all") {
-                    if (this.props.ownerFilter === "system" && !this.props.images[id].isSystem)
-                        return false;
-                    if (this.props.ownerFilter !== "system" && this.props.images[id].isSystem)
-                        return false;
-                }
-
                 const tags = this.props.images[id].RepoTags || [];
                 if (!intermediateOpened && tags.length < 1)
                     return false;
@@ -211,11 +204,8 @@ class Images extends React.Component {
         }
 
         filtered.sort((a, b) => {
-            // User images are in front of system ones
-            if (this.props.images[a].isSystem !== this.props.images[b].isSystem)
-                return this.props.images[a].isSystem ? 1 : -1;
-            const name_a = this.props.images[a].RepoTags ? this.props.images[a].RepoTags[0] : "";
-            const name_b = this.props.images[b].RepoTags ? this.props.images[b].RepoTags[0] : "";
+            const name_a = this.props.images[a].RepoTags.length > 0 ? this.props.images[a].RepoTags[0] : "";
+            const name_b = this.props.images[b].RepoTags.length > 0 ? this.props.images[b].RepoTags[0] : "";
             if (name_a === "")
                 return 1;
             if (name_b === "")
@@ -229,14 +219,6 @@ class Images extends React.Component {
             // Intermediate image does not have any tags
             if (this.props.images[id].RepoTags && this.props.images[id].RepoTags.length > 0)
                 return false;
-
-            // Only filter by selected user
-            if (this.props.userServiceAvailable && this.props.systemServiceAvailable && this.props.ownerFilter !== "all") {
-                if (this.props.ownerFilter === "system" && !this.props.images[id].isSystem)
-                    return false;
-                if (this.props.ownerFilter !== "system" && this.props.images[id].isSystem)
-                    return false;
-            }
 
             // Any text filter hides all images
             if (this.props.textFilter.length > 0)
@@ -363,7 +345,7 @@ const ImageOverActions = ({ handleDownloadNewImage, handlePruneUsedImages, unuse
     );
 };
 
-const ImageActions = ({ image, onAddNotification, registries, selinuxAvailable, user, systemServiceAvailable, userServiceAvailable, podmanRestartAvailable, userPodmanRestartAvailable, userLingeringEnabled, version }) => {
+const ImageActions = ({ image, onAddNotification, registries, selinuxAvailable, user, systemServiceAvailable, userServiceAvailable, dockerRestartAvailable, userDockerRestartAvailable, userLingeringEnabled, version }) => {
     const Dialogs = useDialogs();
     const [isActionsKebabOpen, setIsActionsKebabOpen] = useState(false);
 
@@ -371,8 +353,8 @@ const ImageActions = ({ image, onAddNotification, registries, selinuxAvailable, 
         setIsActionsKebabOpen(false);
         Dialogs.show(<ImageRunModal registries={registries}
                                     selinuxAvailable={selinuxAvailable}
-                                    podmanRestartAvailable={podmanRestartAvailable}
-                                    userPodmanRestartAvailable={userPodmanRestartAvailable}
+                                    dockerRestartAvailable={dockerRestartAvailable}
+                                    userDockerRestartAvailable={userDockerRestartAvailable}
                                     systemServiceAvailable={systemServiceAvailable}
                                     userServiceAvailable={userServiceAvailable}
                                     userLingeringEnabled={userLingeringEnabled}

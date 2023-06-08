@@ -7,12 +7,7 @@ import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex";
 
 const _ = cockpit.gettext;
 
-const render_container_state = (container) => {
-    if (container.State === "running") {
-        return cockpit.format(_("Up since $0"), utils.localize_time(container.StartedAt));
-    }
-    return cockpit.format(_("Exited"));
-};
+const render_container_state = (container) => container.Status;
 
 const ContainerDetails = ({ container, containerDetail }) => {
     const networkOptions = (
@@ -62,7 +57,7 @@ const ContainerDetails = ({ container, containerDetail }) => {
                 <DescriptionList className='container-details-state'>
                     <DescriptionListGroup>
                         <DescriptionListTerm>{_("Created")}</DescriptionListTerm>
-                        <DescriptionListDescription>{utils.localize_time(Date.parse(container.Created) / 1000)}</DescriptionListDescription>
+                        <DescriptionListDescription>{utils.localize_time(container.Created / 1000)}</DescriptionListDescription>
                     </DescriptionListGroup>
                     <DescriptionListGroup>
                         <DescriptionListTerm>{_("State")}</DescriptionListTerm>

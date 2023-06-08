@@ -137,25 +137,26 @@ class ContainerTerminal extends React.Component {
         buffer.callback = (data) => {
             let ret = 0;
             let pos = 0;
-            let headers = "";
+            // let headers = "";
 
             // Double line break separates header from body
             pos = sequence_find(data, [13, 10, 13, 10]);
             if (pos == -1)
                 return ret;
 
-            if (data.subarray)
-                headers = cockpit.utf8_decoder().decode(data.subarray(0, pos));
-            else
-                headers = cockpit.utf8_decoder().decode(data.slice(0, pos));
+            // if (data.subarray)
+            // headers = cockpit.utf8_decoder().decode(data.subarray(0, pos));
+            // else
+            // headers = cockpit.utf8_decoder().decode(data.slice(0, pos));
 
-            const parts = headers.split("\r\n", 1)[0].split(" ");
+            // const parts = headers.split("\r\n", 1)[0].split(" ");
             // Check if we got `101` as we expect `HTTP/1.1 101 UPGRADED`
-            if (parts[1] != "101") {
-                console.log(parts.slice(2).join(" "));
-                buffer.callback = null;
-                return;
-            } else if (data.subarray) {
+            // if (parts[1] != "101") {
+            //     console.log(parts.slice(2).join(" "));
+            //     buffer.callback = null;
+            //     return;
+            // } else
+            if (data.subarray) {
                 data = data.subarray(pos + 4);
                 ret += pos + 4;
             } else {
@@ -192,14 +193,15 @@ class ContainerTerminal extends React.Component {
                     const channel = cockpit.channel({
                         payload: "stream",
                         unix: client.getAddress(this.props.system),
-                        superuser: this.props.system ? "require" : null,
+                        superuser: "require",
                         binary: true
                     });
 
                     const body = JSON.stringify({ Detach: false, Tty: false });
-                    channel.send("POST " + client.VERSION + "libpod/exec/" + encodeURIComponent(r.Id) +
+                    channel.send("POST " + client.VERSION + "/exec/" + encodeURIComponent(r.Id) +
                               "/start HTTP/1.0\r\n" +
-                              "Upgrade: WebSocket\r\nConnection: Upgrade\r\nContent-Length: " + body.length + "\r\n\r\n" + body);
+                              "Content-Type: application/json; charset=utf-8\r\n" +
+                              "Content-Length: " + body.length + "\r\n\r\n" + body);
 
                     const buffer = this.setUpBuffer(channel);
                     this.setState({ channel, errorMessage: "", buffer, sessionId: r.Id }, () => this.resize(this.props.width));
@@ -211,13 +213,13 @@ class ContainerTerminal extends React.Component {
         const channel = cockpit.channel({
             payload: "stream",
             unix: client.getAddress(this.props.system),
-            superuser: this.props.system ? "require" : null,
+            superuser: "require",
             binary: true
         });
 
-        channel.send("POST " + client.VERSION + "libpod/containers/" + encodeURIComponent(this.state.container) +
-                      "/attach?&stdin=true&stdout=true&stderr=true HTTP/1.0\r\n" +
-                      "Upgrade: WebSocket\r\nConnection: Upgrade\r\nContent-Length: 0\r\n\r\n");
+        channel.send("POST " + client.VERSION + "/containers/" + encodeURIComponent(this.state.container) +
+                      "/attach?stdin=true&stdout=true&stderr=true&stream=true HTTP/1.0\r\n" +
+                      "Upgrade: tcp\r\nConnection: Upgrade\r\n\r\n");
 
         const buffer = this.setUpBuffer(channel);
         this.setState({ channel, errorMessage: "", buffer });
@@ -232,8 +234,9 @@ class ContainerTerminal extends React.Component {
     }
 
     onChannelMessage(buffer) {
-        if (buffer)
+        if (buffer) {
             this.state.term.write(decoder.decode(buffer));
+        }
         return buffer.length;
     }
 

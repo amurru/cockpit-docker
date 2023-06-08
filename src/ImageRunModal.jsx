@@ -161,6 +161,7 @@ export class ImageRunModal extends React.Component {
             searchByRegistry: 'all',
             /* health check */
             healthcheck_command: "",
+            healthcheck_shell: false,
             healthcheck_interval: 30,
             healthcheck_timeout: 30,
             healthcheck_start_period: 0,
@@ -186,13 +187,10 @@ export class ImageRunModal extends React.Component {
 
     getCreateConfig() {
         const createConfig = {};
-
-        if (this.props.pod) {
-            createConfig.pod = this.props.pod.Id;
-        }
+        createConfig.HostConfig = {};
 
         if (this.state.image) {
-            createConfig.image = this.state.image.RepoTags ? this.state.image.RepoTags[0] : "";
+            createConfig.image = this.state.image.RepoTags.length > 0 ? this.state.image.RepoTags[0] : "";
         } else {
             let img = this.state.selectedImage.Name;
             // Make implicit :latest
@@ -201,74 +199,82 @@ export class ImageRunModal extends React.Component {
             }
             createConfig.image = img;
         }
+
         if (this.state.containerName)
             createConfig.name = this.state.containerName;
-        if (this.state.command) {
+
+        if (this.state.command)
             createConfig.command = utils.unquote_cmdline(this.state.command);
-        }
-        const resourceLimit = {};
+
         if (this.state.memoryConfigure && this.state.memory) {
             const memorySize = this.state.memory * (1000 ** units[this.state.memoryUnit].baseExponent);
-            resourceLimit.memory = { limit: memorySize };
-            createConfig.resource_limits = resourceLimit;
+            createConfig.HostConfig.Memory = memorySize;
         }
-        if (this.state.cpuSharesConfigure && parseInt(this.state.cpuShares) !== 0) {
-            resourceLimit.cpu = { shares: parseInt(this.state.cpuShares) };
-            createConfig.resource_limits = resourceLimit;
-        }
+
+        if (this.state.cpuSharesConfigure && parseInt(this.state.cpuShares) !== 0)
+            createConfig.HostConfig.CpuShares = parseInt(this.state.cpuShares);
+
         createConfig.terminal = this.state.hasTTY;
-        if (this.state.publish.length > 0)
-            createConfig.portmappings = this.state.publish
-                    .filter(port => port.containerPort)
-                    .map(port => {
-                        const pm = { container_port: parseInt(port.containerPort), protocol: port.protocol };
-                        if (port.hostPort !== null)
-                            pm.host_port = parseInt(port.hostPort);
-                        if (port.IP !== null)
-                            pm.host_ip = port.IP;
-                        return pm;
-                    });
-        if (this.state.env.length > 0) {
-            const ports = {};
-            this.state.env.forEach(item => { ports[item.envKey] = item.envValue });
-            createConfig.env = ports;
+        if (this.state.publish.length > 0) {
+            createConfig.HostConfig.PortBindings = {};
+            createConfig.ExposedPorts = {};
+            this.state.publish.forEach(item => {
+                createConfig.ExposedPorts[item.containerPort + "/" + item.protocol] = {};
+                const mapping = { HostPort: item.hostPort };
+                if (item.hostIp)
+                    mapping.HostIp = item.hostIp;
+                createConfig.HostConfig.PortBindings[item.containerPort + "/" + item.protocol] = [mapping];
+            });
         }
+
+        if (this.state.env.length > 0) {
+            createConfig.Env = [];
+            this.state.env.forEach(item => { createConfig.Env.push(item.envKey + "=" + item.envValue) });
+        }
+
         if (this.state.volumes.length > 0) {
-            createConfig.mounts = this.state.volumes
+            createConfig.HostConfig.Mounts = this.state.volumes
                     .filter(volume => volume.hostPath && volume.containerPath)
                     .map(volume => {
-                        const record = { source: volume.hostPath, destination: volume.containerPath, type: "bind" };
-                        record.options = [];
-                        if (volume.mode)
-                            record.options.push(volume.mode);
-                        if (volume.selinux)
-                            record.options.push(volume.selinux);
-                        return record;
+                        return {
+                            Source: volume.hostPath,
+                            Target: volume.containerPath,
+                            Type: "bind",
+                            ReadOnly: volume.ReadOnly
+                        };
                     });
         }
 
         if (this.state.restartPolicy !== "no") {
-            createConfig.restart_policy = this.state.restartPolicy;
+            createConfig.HostConfig.RestartPolicy = { Name: this.state.restartPolicy };
             if (this.state.restartPolicy === "on-failure" && this.state.restartTries !== null) {
-                createConfig.restart_tries = parseInt(this.state.restartTries);
+                createConfig.HostConfig.RestartPolicy.MaximumRetryCount = parseInt(this.state.restartTries);
             }
-            // Enable podman-restart.service for system containers, for user
+            // Enable docker-restart.service for system containers, for user
             // sessions enable-linger needs to be enabled for containers to start on boot.
             if (this.state.restartPolicy === "always" && (this.props.userLingeringEnabled || this.props.systemServiceAvailable)) {
-                this.enablePodmanRestartService();
+                this.enableDockerRestartService();
             }
         }
 
         if (this.state.healthcheck_command !== "") {
-            createConfig.healthconfig = {
+            const test = utils.unquote_cmdline(this.state.healthcheck_command);
+            if (this.state.healthcheck_shell) {
+                test.unshift("CMD-SHELL");
+            } else {
+                test.unshift("CMD");
+            }
+            createConfig.Healthcheck = {
                 Interval: parseInt(this.state.healthcheck_interval) * 1000000000,
                 Retries: this.state.healthcheck_retries,
                 StartPeriod: parseInt(this.state.healthcheck_start_period) * 1000000000,
-                Test: utils.unquote_cmdline(this.state.healthcheck_command),
+                Test: test,
                 Timeout: parseInt(this.state.healthcheck_timeout) * 1000000000,
             };
             createConfig.health_check_on_failure_action = parseInt(this.state.healthcheck_action);
         }
+
+        console.log("createConfig", createConfig);
 
         return createConfig;
     }
@@ -406,11 +412,11 @@ export class ImageRunModal extends React.Component {
         let searches = [];
 
         // If there are registries configured search in them, or if a user searches for `docker.io/cockpit` let
-        // podman search in the user specified registry.
+        // docker search in the user specified registry.
         if (Object.keys(this.props.registries).length !== 0 || value.includes('/')) {
             searches.push(this.activeConnection.call({
                 method: "GET",
-                path: client.VERSION + "libpod/images/search",
+                path: client.VERSION + "/images/search",
                 body: "",
                 params: {
                     term: value,
@@ -420,7 +426,7 @@ export class ImageRunModal extends React.Component {
             searches = searches.concat(utils.fallbackRegistries.map(registry =>
                 this.activeConnection.call({
                     method: "GET",
-                    path: client.VERSION + "libpod/images/search",
+                    path: client.VERSION + "/images/search",
                     body: "",
                     params: {
                         term: registry + "/" + value
@@ -440,7 +446,7 @@ export class ImageRunModal extends React.Component {
                                 imageResults = imageResults.concat(JSON.parse(result.value));
                             } else {
                                 dialogError = _("Failed to search for new images");
-                                // TODO: add registry context, podman does not include it in the reply.
+                                // TODO: add registry context, docker does not include it in the reply.
                                 dialogErrorDetail = result.reason ? cockpit.format(_("Failed to search for images: $0"), result.reason.message) : _("Failed to search for images.");
                             }
                         }
@@ -609,7 +615,7 @@ export class ImageRunModal extends React.Component {
         return results;
     };
 
-    // Similar to the output of podman search and podman's /libpod/images/search endpoint only show the root domain.
+    // Similar to the output of docker search and docker's //images/search endpoint only show the root domain.
     truncateRegistryDomain = (domain) => {
         const parts = domain.split('.');
         if (parts.length > 2) {
@@ -618,15 +624,15 @@ export class ImageRunModal extends React.Component {
         return domain;
     };
 
-    enablePodmanRestartService = () => {
-        const argv = ["systemctl", "enable", "podman-restart.service"];
+    enableDockerRestartService = () => {
+        const argv = ["systemctl", "enable", "docker-restart.service"];
         if (!this.isSystem()) {
             argv.splice(1, 0, "--user");
         }
 
         cockpit.spawn(argv, { superuser: this.isSystem() ? "require" : "", err: "message" })
                 .catch(err => {
-                    console.warn("Failed to start podman-restart.service:", JSON.stringify(err));
+                    console.warn("Failed to start docker-restart.service:", JSON.stringify(err));
                 });
     };
 
@@ -761,7 +767,7 @@ export class ImageRunModal extends React.Component {
                                 bodyContent={
                                     <Flex direction={{ default: 'column' }}>
                                         <FlexItem>{_("host[:port]/[user]/container[:tag]")}</FlexItem>
-                                        <FlexItem>{cockpit.format(_("Example: $0"), "quay.io/libpod/busybox")}</FlexItem>
+                                        <FlexItem>{cockpit.format(_("Example: $0"), "quay.io//busybox")}</FlexItem>
                                         <FlexItem>{cockpit.format(_("Searching: $0"), "quay.io/busybox")}</FlexItem>
                                     </Flex>
                                 }>
@@ -817,7 +823,7 @@ export class ImageRunModal extends React.Component {
                            onChange={value => this.onValueChanged('command', value)} />
                         </FormGroup>
 
-                        <FormGroup fieldId="run=image-dialog-tty">
+                        <FormGroup fieldId="run-image-dialog-tty">
                             <Checkbox id="run-image-dialog-tty"
                               isChecked={this.state.hasTTY}
                               label={_("With terminal")}
@@ -853,8 +859,7 @@ export class ImageRunModal extends React.Component {
                             </Flex>
                         </FormGroup>
 
-                        {this.isSystem() &&
-                            <FormGroup
+                        <FormGroup
                               fieldId='run-image-cpu-priority'
                               label={_("CPU shares")}
                               labelIcon={
@@ -866,11 +871,11 @@ export class ImageRunModal extends React.Component {
                                       </button>
                                   </Popover>
                               }>
-                                <Flex alignItems={{ default: 'alignItemsCenter' }} className="ct-input-group-spacer-sm modal-run-limiter" id="run-image-dialog-cpu-priority">
-                                    <Checkbox id="run-image-dialog-cpu-priority-checkbox"
+                            <Flex alignItems={{ default: 'alignItemsCenter' }} className="ct-input-group-spacer-sm modal-run-limiter" id="run-image-dialog-cpu-priority">
+                                <Checkbox id="run-image-dialog-cpu-priority-checkbox"
                                         isChecked={this.state.cpuSharesConfigure}
                                         onChange={(_event, checked) => this.onValueChanged('cpuSharesConfigure', checked)} />
-                                    <NumberInput
+                                <NumberInput
                                         id="run-image-cpu-priority"
                                         value={dialogValues.cpuShares}
                                         onClick={() => !this.state.cpuSharesConfigure && this.onValueChanged('cpuSharesConfigure', true)}
@@ -882,10 +887,10 @@ export class ImageRunModal extends React.Component {
                                         minusBtnAriaLabel={_("Decrease CPU shares")}
                                         plusBtnAriaLabel={_("Increase CPU shares")}
                                         onChange={ev => this.onValueChanged('cpuShares', parseInt(ev.target.value) < 2 ? 2 : ev.target.value)} />
-                                </Flex>
-                            </FormGroup>
-                        }
-                        {((this.props.userLingeringEnabled && this.props.userPodmanRestartAvailable) || (this.isSystem() && this.props.podmanRestartAvailable)) &&
+                            </Flex>
+                        </FormGroup>
+
+                        {((this.props.userLingeringEnabled && this.props.userDockerRestartAvailable) || (this.props.dockerRestartAvailable)) &&
                         <Grid hasGutter md={6} sm={3}>
                             <GridItem>
                                 <FormGroup fieldId='run-image-dialog-restart-policy' label={_("Restart policy")}
@@ -946,7 +951,7 @@ export class ImageRunModal extends React.Component {
                                  label={_("Volumes")}
                                  actionLabel={_("Add volume")}
                                  onChange={value => this.onValueChanged('volumes', value)}
-                                 default={{ containerPath: null, hostPath: null, mode: 'rw' }}
+                                 default={{ containerPath: null, hostPath: null, readOnly: false }}
                                  options={{ selinuxAvailable: this.props.selinuxAvailable }}
                                  itemcomponent={ <Volume />} />
 
@@ -965,6 +970,13 @@ export class ImageRunModal extends React.Component {
                             <TextInput id='run-image-dialog-healthcheck-command'
                            value={dialogValues.healthcheck_command || ''}
                            onChange={value => this.onValueChanged('healthcheck_command', value)} />
+                        </FormGroup>
+
+                        <FormGroup fieldId="run-image-dialog-healthcheck-shell">
+                            <Checkbox id="run-image-dialog-healthcheck-shell"
+                              isChecked={dialogValues.healthcheck_shell}
+                              label={_("In shell")}
+                              onChange={(_event, checked) => this.onValueChanged('healthcheck_shell', checked)} />
                         </FormGroup>
 
                         <FormGroup fieldId='run-image-healthcheck-interval' label={_("Interval")}

@@ -1,5 +1,5 @@
 #!/bin/sh
-# image-customize script to prepare a bots VM for cockpit-podman testing
+# image-customize script to prepare a bots VM for cockpit-docker testing
 set -eu
 
 if grep -q ID.*debian /usr/lib/os-release; then
@@ -27,17 +27,17 @@ fi
 . /usr/lib/os-release
 
 # Remove extra images, tests assume our specific set
-# Since 4.0 podman now ships the pause image
-podman images --format '{{.Repository}}:{{.Tag}}' | grep -Ev 'localhost/test-|pause|cockpit/ws' | xargs -r podman rmi -f
+# Since 4.0 docker now ships the pause image
+docker images --format '{{.Repository}}:{{.Tag}}' | grep -Ev 'localhost/test-|pause|cockpit/ws' | xargs -r docker rmi -f
 
-# copy images for user podman tests; podman insists on user session
+# copy images for user docker tests; docker insists on user session
 loginctl enable-linger $(id -u admin)
-images=$(podman images --format '{{.Repository}}:{{.Tag}}')
+images=$(docker images --format '{{.Repository}}:{{.Tag}}')
 for img in $images; do
-	podman save  $img | sudo -i -u admin podman load
+	docker save  $img | sudo -i -u admin docker load
 done
 	loginctl disable-linger $(id -u admin)
 
-# 15minutes after boot tmp files are removed and podman stores some tmp lock files
+# 15minutes after boot tmp files are removed and docker stores some tmp lock files
 systemctl disable --now systemd-tmpfiles-clean.timer
 systemctl --global disable systemd-tmpfiles-clean.timer

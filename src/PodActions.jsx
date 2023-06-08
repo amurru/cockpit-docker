@@ -71,7 +71,7 @@ export const PodActions = ({ onAddNotification, pod }) => {
     const [isOpen, setOpen] = useState(false);
 
     const dropdownItems = [];
-    // Possible Pod Statuses can be found here https://github.com/containers/podman/blob/main/libpod/define/podstate.go
+    // Possible Pod Statuses can be found here https://github.com/containers/docker/blob/main//define/podstate.go
     if (pod.Status == "Running" || pod.Status == "Paused") {
         dropdownItems.push(
             <DropdownItem key="action-stop"

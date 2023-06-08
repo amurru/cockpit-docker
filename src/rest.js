@@ -42,6 +42,7 @@ function connect(address, system) {
     };
 
     connection.call = function (options) {
+        // console.log("connection.call", options);
         return new Promise((resolve, reject) => {
             options = options || {};
             http.request(options)
@@ -60,13 +61,24 @@ function connect(address, system) {
 }
 
 /*
- * Connects to the podman service, performs a single call, and closes the
+ * Connects to the docker service, performs a single call, and closes the
  * connection.
  */
 async function call (address, system, parameters) {
     const connection = connect(address, system);
     const result = await connection.call(parameters);
     connection.close();
+    // if (parameters.method === "GET")
+    //     return result;
+
+    // let p = {};
+    // try {
+    //     p = JSON.parse(result);
+    // } catch {
+    //     p = result;
+    // }
+    // console.log("call", { method: parameters.method, path: parameters.path, system, parameters, result: p });
+
     return result;
 }
 

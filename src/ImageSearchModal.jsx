@@ -59,7 +59,7 @@ export class ImageSearchModal extends React.Component {
 
     onDownloadClicked() {
         const Dialogs = this.context;
-        const selectedImageName = this.state.imageList[this.state.selected].Name;
+        const selectedImageName = this.state.imageList[this.state.selected].name;
 
         Dialogs.close();
         this.props.downloadImage(selectedImageName, this.state.imageTag, this.state.isSystem);
@@ -85,7 +85,7 @@ export class ImageSearchModal extends React.Component {
 
         this.activeConnection = rest.connect(client.getAddress(this.state.isSystem), this.state.isSystem);
         let registries = Object.keys(this.props.registries).length !== 0 ? [this.state.registry] : fallbackRegistries;
-        // if a user searches for `docker.io/cockpit` let podman search in the user specified registry.
+        // if a user searches for `docker.io/cockpit` let docker search in the user specified registry.
         if (this.state.imageIdentifier.includes('/')) {
             registries = [""];
         }
@@ -94,7 +94,7 @@ export class ImageSearchModal extends React.Component {
             const registry = rr.length < 1 || rr[rr.length - 1] === "/" ? rr : rr + "/";
             return this.activeConnection.call({
                 method: "GET",
-                path: client.VERSION + "libpod/images/search",
+                path: client.VERSION + "/images/search",
                 body: "",
                 params: {
                     term: registry + this.state.imageIdentifier
@@ -104,6 +104,7 @@ export class ImageSearchModal extends React.Component {
 
         Promise.allSettled(searches)
                 .then(reply => {
+                    // console.log(reply);
                     if (reply && this._isMounted) {
                         let results = [];
                         let dialogError = "";
@@ -112,6 +113,7 @@ export class ImageSearchModal extends React.Component {
                         for (const result of reply) {
                             if (result.status === "fulfilled") {
                                 results = results.concat(JSON.parse(result.value));
+                                // console.log(results);
                             } else {
                                 dialogError = _("Failed to search for new images");
                                 dialogErrorDetail = result.reason ? cockpit.format(_("Failed to search for images: $0"), result.reason.message) : _("Failed to search for images.");
@@ -205,10 +207,10 @@ export class ImageSearchModal extends React.Component {
                                         <DataListItemCells
                                                   dataListCells={[
                                                       <DataListCell key="primary content">
-                                                          <span className='image-name'>{image.Name}</span>
+                                                          <span className='image-name'>{image.name}</span>
                                                       </DataListCell>,
                                                       <DataListCell key="secondary content">
-                                                          <span className='image-description'>{image.Description}</span>
+                                                          <span className='image-description'>{image.description}</span>
                                                       </DataListCell>
                                                   ]}
                                         />
@@ -222,7 +224,7 @@ export class ImageSearchModal extends React.Component {
         );
 
         return (
-            <Modal isOpen className="podman-search"
+            <Modal isOpen className="docker-search"
                    position="top" variant="large"
                    onClose={Dialogs.close}
                    title={_("Search for an image")}

@@ -1,6 +1,6 @@
-# Hacking on Cockpit Podman
+# Hacking on Cockpit docker
 
-The commands here assume you're in the top level of the Cockpit Podman git
+The commands here assume you're in the top level of the Cockpit docker git
 repository checkout.
 
 ## Running out of git checkout
@@ -12,7 +12,7 @@ manually:
 
 ```
 mkdir -p ~/.local/share/cockpit
-ln -s `pwd`/dist ~/.local/share/cockpit/podman
+ln -s `pwd`/dist ~/.local/share/cockpit/docker
 ```
 
 After changing the code and running `make` again, reload the Cockpit page in
@@ -38,7 +38,7 @@ set to upload code changes to `~/.local/share/cockpit/` instead of
 
 ## Running eslint
 
-Cockpit Podman uses [ESLint](https://eslint.org/) to automatically check
+Cockpit docker uses [ESLint](https://eslint.org/) to automatically check
 JavaScript code style in `.jsx` and `.js` files.
 
 eslint is executed within every build.

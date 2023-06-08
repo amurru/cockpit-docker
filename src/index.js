@@ -22,7 +22,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import 'patternfly/patternfly-5-cockpit.scss';
 import Application from './app.jsx';
-import './podman.scss';
+import './docker.scss';
 
 document.addEventListener("DOMContentLoaded", function () {
     const root = createRoot(document.getElementById('app'));

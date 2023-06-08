@@ -33,6 +33,7 @@ import ContainerHeader from './ContainerHeader.jsx';
 import Containers from './Containers.jsx';
 import Images from './Images.jsx';
 import * as client from './client.js';
+// import { th } from 'date-fns/locale/index.js';
 
 const _ = cockpit.gettext;
 
@@ -62,8 +63,8 @@ class Application extends React.Component {
             showStartService: true,
             version: '1.3.0',
             selinuxAvailable: false,
-            podmanRestartAvailable: false,
-            userPodmanRestartAvailable: false,
+            dockerRestartAvailable: false,
+            userDockerRestartAvailable: false,
             currentUser: _("User"),
             userLingeringEnabled: null,
             privileged: false,
@@ -165,12 +166,12 @@ class Application extends React.Component {
         });
     }
 
-    updateContainerStats(system) {
-        client.getContainerStats(system, reply => {
+    updateContainerStats(id, system) {
+        client.getContainerStats(system, id, reply => {
             if (reply.Error != null) // executed when container stop
                 console.warn("Failed to update container stats:", JSON.stringify(reply.message));
             else {
-                reply.Stats.forEach(stat => this.updateState("containersStats", stat.ContainerID + system.toString(), stat));
+                this.updateState("containersStats", id, reply);
             }
         }).catch(ex => {
             if (ex.cause == "no support for CGroups V1 in rootless environments" || ex.cause == "Container stats resource only available for cgroup v2") {
@@ -183,7 +184,7 @@ class Application extends React.Component {
     inspectContainerDetail(id, system) {
         client.inspectContainer(system, id)
                 .then(reply => {
-                    this.updateState("containersDetails", reply.Id + system.toString(), reply);
+                    this.updateState("containersDetails", reply.Id, reply);
                 })
                 .catch(e => console.log(e));
     }
@@ -221,7 +222,7 @@ class Application extends React.Component {
                         });
                         for (const container of reply || []) {
                             container.isSystem = system;
-                            copyContainers[container.Id + system.toString()] = container;
+                            copyContainers[container.Id] = container;
                         }
 
                         return {
@@ -230,9 +231,9 @@ class Application extends React.Component {
                         };
                     });
                     if (init) {
-                        this.updateContainerStats(system);
                         for (const container of reply || []) {
                             this.inspectContainerDetail(container.Id, system);
+                            this.updateContainerStats(container.Id, system);
                         }
                     }
                 })
@@ -252,7 +253,7 @@ class Application extends React.Component {
                         });
                         Object.entries(reply).forEach(([Id, image]) => {
                             image.isSystem = system;
-                            copyImages[Id + system.toString()] = image;
+                            copyImages[Id] = image;
                         });
 
                         return {
@@ -279,7 +280,7 @@ class Application extends React.Component {
                         });
                         for (const pod of reply || []) {
                             pod.isSystem = system;
-                            copyPods[pod.Id + system.toString()] = pod;
+                            copyPods[pod.Id] = pod;
                         }
 
                         return {
@@ -314,15 +315,15 @@ class Application extends React.Component {
                         //       override it to reconnect console after restart
                         if (event && event.Action === "restart")
                             reply.State = "restarting";
-                        this.updateState("containers", reply.Id + system.toString(), reply);
+                        this.updateState("containers", reply.Id, reply);
                         if (["running", "created", "exited", "paused", "stopped"].find(containerState => containerState === reply.State)) {
                             this.inspectContainerDetail(reply.Id, system);
                         } else {
                             this.setState(prevState => {
                                 const copyDetails = Object.assign({}, prevState.containersDetails);
                                 const copyStats = Object.assign({}, prevState.containersStats);
-                                delete copyDetails[reply.Id + system.toString()];
-                                delete copyStats[reply.Id + system.toString()];
+                                delete copyDetails[reply.Id];
+                                delete copyStats[reply.Id];
                                 return { containersDetails: copyDetails, containersStats: copyStats };
                             });
                         }
@@ -336,7 +337,7 @@ class Application extends React.Component {
                 .then(reply => {
                     const immage = reply[id];
                     immage.isSystem = system;
-                    this.updateState("images", id + system.toString(), immage);
+                    this.updateState("images", id, immage);
                 })
                 .catch(ex => {
                     console.warn("Failed to do Update Image:", JSON.stringify(ex));
@@ -350,7 +351,7 @@ class Application extends React.Component {
                         reply = reply[0];
 
                         reply.isSystem = system;
-                        this.updateState("pods", reply.Id + system.toString(), reply);
+                        this.updateState("pods", reply.Id, reply);
                     }
                 })
                 .catch(ex => {
@@ -367,23 +368,27 @@ class Application extends React.Component {
             break;
         case 'pull': // Pull event has not event.id
         case 'untag':
+        case 'delete':
         case 'remove':
         case 'prune':
         case 'build':
             this.updateImagesAfterEvent(system);
             break;
         default:
-            console.warn('Unhandled event type ', event.Type, event.Action);
+            console.warn('Unhandled event type', event.Type, event.Action);
         }
     }
 
     handleContainerEvent(event, system) {
+        if (event.Action.includes(':'))
+            event.Action = event.Action.split(':')[0];
         switch (event.Action) {
         /* The following events do not need to trigger any state updates */
         case 'attach':
         case 'exec':
         case 'export':
         case 'import':
+        case 'resize':
         case 'init':
         case 'wait':
             break;
@@ -391,9 +396,10 @@ class Application extends React.Component {
          * We do get the container affected in the event object but for
          * now we 'll do a batch update
          */
+        case 'exec_start':
         case 'start':
             // HACK: We don't get 'started' event for pods got started by the first container which was added to them
-            // https://github.com/containers/podman/issues/7213
+            // https://github.com/containers/docker/issues/7213
             if (event.Actor.Attributes.podId) {
                 this.updatePodAfterEvent(event.Actor.Attributes.podId, system);
             } else {
@@ -402,8 +408,11 @@ class Application extends React.Component {
             this.updateContainerAfterEvent(event.Actor.ID, system, event);
             break;
         case 'checkpoint':
+        case 'exec_create':
         case 'create':
         case 'died':
+        case 'die':
+        case 'exec_die':
         case 'exec_died':
         case 'kill':
         case 'mount':
@@ -415,13 +424,14 @@ class Application extends React.Component {
         case 'sync':
         case 'unmount':
         case 'unpause':
-        case 'rename': // rename event is available starting podman v4.1; until then the container does not get refreshed after renaming
+        case 'rename': // rename event is available starting docker v4.1; until then the container does not get refreshed after renaming
             this.updateContainerAfterEvent(event.Actor.ID, system, event);
             break;
+        case 'destroy':
         case 'remove':
         case 'cleanup':
             // HACK: we don't get a pod event when a container in a pod is removed.
-            // https://github.com/containers/podman/issues/15408
+            // https://github.com/containers/docker/issues/15408
             if (event.Actor.Attributes.podId) {
                 this.updatePodAfterEvent(event.Actor.Attributes.podId, system);
             } else {
@@ -434,7 +444,7 @@ class Application extends React.Component {
             this.updateImagesAfterEvent(system);
             break;
         default:
-            console.warn('Unhandled event type ', event.Type, event.Action);
+            console.warn('Unhandled event type', event.Type, event.Action);
         }
     }
 
@@ -452,7 +462,7 @@ class Application extends React.Component {
             this.updatePodsAfterEvent(system);
             break;
         default:
-            console.warn('Unhandled event type ', event.Type, event.Action);
+            console.warn('Unhandled event type', event.Type, event.Action);
         }
     }
 
@@ -467,8 +477,11 @@ class Application extends React.Component {
         case 'pod':
             this.handlePodEvent(event, system);
             break;
+        case 'volume':
+        case 'network':
+            break;
         default:
-            console.warn('Unhandled event type ', event.Type);
+            console.warn('Unhandled event type', event.Type);
         }
     }
 
@@ -490,10 +503,10 @@ class Application extends React.Component {
         client.getInfo(system)
                 .then(reply => {
                     this.setState({
-                        [system ? "systemServiceAvailable" : "userServiceAvailable"]: true,
-                        version: reply.version.Version,
-                        registries: reply.registries,
-                        cgroupVersion: reply.host.cgroupVersion,
+                        systemServiceAvailable: true,
+                        version: reply.ServerVersion,
+                        registries: reply.RegistryConfig.IndexConfigs,
+                        cgroupVersion: reply.CgroupVersion,
                     });
                     this.updateImagesAfterEvent(system);
                     this.updateContainersAfterEvent(system, true);
@@ -501,37 +514,38 @@ class Application extends React.Component {
                     client.streamEvents(system,
                                         message => this.handleEvent(message, system))
                             .then(() => {
-                                this.setState({ [system ? "systemServiceAvailable" : "userServiceAvailable"]: false });
+                                this.setState({ systemServiceAvailable: false });
                                 this.cleanupAfterService(system);
                             })
                             .catch(e => {
                                 console.log(e);
-                                this.setState({ [system ? "systemServiceAvailable" : "userServiceAvailable"]: false });
+                                this.setState({ systemServiceAvailable: false });
                                 this.cleanupAfterService(system);
                             });
 
-                    // Listen if podman is still running
+                    // Listen if docker is still running
                     const ch = cockpit.channel({ superuser: system ? "require" : null, payload: "stream", unix: client.getAddress(system) });
                     ch.addEventListener("close", () => {
-                        this.setState({ [system ? "systemServiceAvailable" : "userServiceAvailable"]: false });
+                        this.setState({ systemServiceAvailable: false });
                         this.cleanupAfterService(system);
                     });
 
-                    ch.send("GET " + client.VERSION + "libpod/events HTTP/1.0\r\nContent-Length: 0\r\n\r\n");
+                    ch.send("GET " + client.VERSION + "/events HTTP/1.0\r\nContent-Length: 0\r\n\r\n");
                 })
-                .catch(() => {
+                .catch((error) => {
+                    console.log(error);
                     this.setState({
-                        [system ? "systemServiceAvailable" : "userServiceAvailable"]: false,
-                        [system ? "systemContainersLoaded" : "userContainersLoaded"]: true,
-                        [system ? "systemImagesLoaded" : "userImagesLoaded"]: true,
-                        [system ? "systemPodsLoaded" : "userPodsLoaded"]: true
+                        systemServiceAvailable: false,
+                        systemContainersLoaded: true,
+                        systemImagesLoaded: true,
+                        systemPodsLoaded: true
                     });
                 });
     }
 
     componentDidMount() {
         this.init(true);
-        cockpit.script("[ `id -u` -eq 0 ] || echo $XDG_RUNTIME_DIR")
+        cockpit.script("[ `id -u` -eq 0 ] || [ `id -nG | grep -qw docker; echo $?` -eq 0 ]")
                 .done(xrd => {
                     const isRoot = !xrd || xrd.split("/").pop() == "root";
                     if (!isRoot) {
@@ -552,8 +566,8 @@ class Application extends React.Component {
                 .then(() => this.setState({ selinuxAvailable: true }))
                 .catch(() => this.setState({ selinuxAvailable: false }));
 
-        cockpit.spawn(["systemctl", "show", "--value", "-p", "LoadState", "podman-restart"], { environ: ["LC_ALL=C"], error: "ignore" })
-                .then(out => this.setState({ podmanRestartAvailable: out.trim() === "loaded" }));
+        cockpit.spawn(["systemctl", "show", "--value", "-p", "LoadState", "docker-restart"], { environ: ["LC_ALL=C"], error: "ignore" })
+                .then(out => this.setState({ dockerRestartAvailable: out.trim() === "loaded" }));
 
         superuser.addEventListener("changed", () => this.setState({ privileged: !!superuser.allowed }));
         this.setState({ privileged: superuser.allowed });
@@ -599,10 +613,10 @@ class Application extends React.Component {
     }
 
     checkUserService() {
-        const argv = ["systemctl", "--user", "is-enabled", "podman.socket"];
+        const argv = ["systemctl", "--user", "is-enabled", "docker.socket"];
 
-        cockpit.spawn(["systemctl", "--user", "show", "--value", "-p", "LoadState", "podman-restart"], { environ: ["LC_ALL=C"], error: "ignore" })
-                .then(out => this.setState({ userPodmanRestartAvailable: out.trim() === "loaded" }));
+        cockpit.spawn(["systemctl", "--user", "show", "--value", "-p", "LoadState", "docker-restart"], { environ: ["LC_ALL=C"], error: "ignore" })
+                .then(out => this.setState({ userDockerRestartAvailable: out.trim() === "loaded" }));
 
         cockpit.spawn(argv, { environ: ["LC_ALL=C"], err: "out" })
                 .then(() => this.setState({ userServiceExists: true }))
@@ -620,9 +634,9 @@ class Application extends React.Component {
 
         let argv;
         if (this.state.enableService)
-            argv = ["systemctl", "enable", "--now", "podman.socket"];
+            argv = ["systemctl", "enable", "--now", "docker.socket"];
         else
-            argv = ["systemctl", "start", "podman.socket"];
+            argv = ["systemctl", "start", "docker.socket"];
 
         cockpit.spawn(argv, { superuser: "require", err: "message" })
                 .then(() => this.init(true))
@@ -632,31 +646,14 @@ class Application extends React.Component {
                         systemContainersLoaded: true,
                         systemImagesLoaded: true
                     });
-                    console.warn("Failed to start system podman.socket:", JSON.stringify(err));
-                });
-
-        if (this.state.enableService)
-            argv = ["systemctl", "--user", "enable", "--now", "podman.socket"];
-        else
-            argv = ["systemctl", "--user", "start", "podman.socket"];
-
-        cockpit.spawn(argv, { err: "message" })
-                .then(() => this.init(false))
-                .catch(err => {
-                    this.setState({
-                        userServiceAvailable: false,
-                        userContainersLoaded: true,
-                        userPodsLoaded: true,
-                        userImagesLoaded: true
-                    });
-                    console.warn("Failed to start user podman.socket:", JSON.stringify(err));
+                    console.warn("Failed to start system docker.socket:", JSON.stringify(err));
                 });
     }
 
     goToServicePage(e) {
         if (!e || e.button !== 0)
             return;
-        cockpit.jump("/system/services#/podman.socket");
+        cockpit.jump("/system/services#/docker.socket");
     }
 
     render() {
@@ -668,14 +665,14 @@ class Application extends React.Component {
                 <Page>
                     <PageSection variant={PageSectionVariants.light}>
                         <EmptyState variant={EmptyStateVariant.full}>
-                            <EmptyStateHeader titleText={_("Podman service is not active")} icon={<EmptyStateIcon icon={ExclamationCircleIcon} />} headingLevel="h2" />
+                            <EmptyStateHeader titleText={_("docker service is not active")} icon={<EmptyStateIcon icon={ExclamationCircleIcon} />} headingLevel="h2" />
                             <EmptyStateFooter>
                                 <Checkbox isChecked={this.state.enableService}
                                       id="enable"
-                                      label={_("Automatically start podman on boot")}
+                                      label={_("Automatically start docker on boot")}
                                       onChange={ (_event, checked) => this.setState({ enableService: checked }) } />
                                 <Button onClick={this.startService}>
-                                    {_("Start podman")}
+                                    {_("Start docker")}
                                 </Button>
                                 { cockpit.manifests.system &&
                                 <EmptyStateActions>
@@ -695,16 +692,16 @@ class Application extends React.Component {
         if (this.state.containers !== null) {
             Object.keys(this.state.containers).forEach(c => {
                 const container = this.state.containers[c];
-                const image = container.ImageID + container.isSystem.toString();
+                const image = container.ImageID;
                 if (imageContainerList[image]) {
                     imageContainerList[image].push({
                         container,
-                        stats: this.state.containersStats[container.Id + container.isSystem.toString()],
+                        stats: this.state.containersStats[container.Id],
                     });
                 } else {
                     imageContainerList[image] = [{
                         container,
-                        stats: this.state.containersStats[container.Id + container.isSystem.toString()]
+                        stats: this.state.containersStats[container.Id]
                     }];
                 }
             });
@@ -721,14 +718,14 @@ class Application extends React.Component {
         if (!this.state.systemServiceAvailable && this.state.privileged) {
             startService = (
                 <Alert variant='default'
-                title={_("System Podman service is also available")}
+                title={_("System docker service is also available")}
                 actionClose={action} />
             );
         }
         if (!this.state.userServiceAvailable && this.state.userServiceExists) {
             startService = (
                 <Alert variant='default'
-                title={_("User Podman service is also available")}
+                title={_("User docker service is also available")}
                 actionClose={action} />
             );
         }
@@ -747,8 +744,8 @@ class Application extends React.Component {
                 systemServiceAvailable={this.state.systemServiceAvailable}
                 registries={this.state.registries}
                 selinuxAvailable={this.state.selinuxAvailable}
-                podmanRestartAvailable={this.state.podmanRestartAvailable}
-                userPodmanRestartAvailable={this.state.userPodmanRestartAvailable}
+                dockerRestartAvailable={this.state.dockerRestartAvailable}
+                userDockerRestartAvailable={this.state.userDockerRestartAvailable}
                 userLingeringEnabled={this.state.userLingeringEnabled}
                 version={this.state.version}
             />
@@ -773,8 +770,8 @@ class Application extends React.Component {
                 cgroupVersion={this.state.cgroupVersion}
                 registries={this.state.registries}
                 selinuxAvailable={this.state.selinuxAvailable}
-                podmanRestartAvailable={this.state.podmanRestartAvailable}
-                userPodmanRestartAvailable={this.state.userPodmanRestartAvailable}
+                dockerRestartAvailable={this.state.dockerRestartAvailable}
+                userDockerRestartAvailable={this.state.userDockerRestartAvailable}
                 userLingeringEnabled={this.state.userLingeringEnabled}
                 updateContainerAfterEvent={this.updateContainerAfterEvent}
             />

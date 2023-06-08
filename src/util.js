@@ -4,11 +4,11 @@ import * as dfnlocales from 'date-fns/locale/index.js';
 import { formatRelative } from 'date-fns';
 const _ = cockpit.gettext;
 
-// https://github.com/containers/podman/blob/main/libpod/define/containerstate.go
+// https://github.com/containers/docker/blob/main//define/containerstate.go
 // "Restarting" comes from special handling of restart case in Application.updateContainerAfterEvent()
 export const states = [_("Exited"), _("Paused"), _("Stopped"), _("Removing"), _("Configured"), _("Created"), _("Restart"), _("Running")];
 
-// https://github.com/containers/podman/blob/main/libpod/define/podstate.go
+// https://github.com/containers/docker/blob/main//define/podstate.go
 export const podStates = [_("Created"), _("Running"), _("Stopped"), _("Paused"), _("Exited"), _("Error")];
 
 export const fallbackRegistries = ["docker.io", "quay.io"];
@@ -17,6 +17,10 @@ export function truncate_id(id) {
     if (!id) {
         return "";
     }
+
+    if (id.indexOf(":") !== -1)
+        id = id.split(":")[1];
+
     return id.substr(0, 12);
 }
 
@@ -25,7 +29,30 @@ export function localize_time(unix_timestamp) {
     return formatRelative(unix_timestamp * 1000, Date.now(), { locale });
 }
 
-export function format_memory_and_limit(usage, limit) {
+export function format_cpu_usage(stats) {
+    const cpu_usage = stats?.cpu_stats?.cpu_usage?.total_usage;
+    const system_cpu_usage = stats?.cpu_stats?.system_cpu_usage;
+    const precpu_usage = stats?.precpu_stats?.cpu_usage?.total_usage;
+    const precpu_system_cpu_usage = stats?.precpu_stats?.system_cpu_usage;
+
+    if (cpu_usage === undefined || isNaN(cpu_usage))
+        return "";
+
+    let cpu_percent = 0;
+    if (precpu_usage !== undefined && precpu_system_cpu_usage !== undefined) {
+        const cpu_delta = cpu_usage - precpu_usage;
+        const system_delta = system_cpu_usage - precpu_system_cpu_usage;
+        if (system_delta > 0 && cpu_delta > 0)
+            cpu_percent = (cpu_delta / system_delta) * stats.cpu_stats.cpu_usage.percpu_usage.length * 100;
+    }
+
+    return cpu_percent.toFixed(2) + "%";
+}
+
+export function format_memory_and_limit(stats) {
+    const usage = stats?.memory_stats?.usage;
+    const limit = stats?.memory_stats?.limit;
+
     if (usage === undefined || isNaN(usage))
         return "";
 
@@ -63,6 +90,9 @@ export function format_memory_and_limit(usage, limit) {
 
 export function quote_cmdline(words) {
     words = words || [];
+
+    if (typeof words === 'string')
+        words = words.split(' ');
 
     function is_whitespace(c) {
         return c == ' ';
@@ -139,7 +169,7 @@ export function unquote_cmdline(text) {
 }
 
 export function image_name(image) {
-    return image.RepoTags ? image.RepoTags[0] : "<none>:<none>";
+    return image.RepoTags.length > 0 ? image.RepoTags[0] : "<none>:<none>";
 }
 
 export function is_valid_container_name(name) {

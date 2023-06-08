@@ -1,4 +1,4 @@
-# #-#-#-#-#  podman.js.pot (PACKAGE VERSION)  #-#-#-#-#
+# #-#-#-#-#  docker.js.pot (PACKAGE VERSION)  #-#-#-#-#
 # SOME DESCRIPTIVE TITLE.
 # Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
 # This file is distributed under the same license as the PACKAGE package.
@@ -12,7 +12,7 @@ msgstr ""
 "PO-Revision-Date: 2023-05-30 13:20+0000\n"
 "Last-Translator: Ludek Janda <ljanda@redhat.com>\n"
 "Language-Team: Chinese (Simplified) <https://translate.fedoraproject.org/"
-"projects/cockpit-podman/main/zh_CN/>\n"
+"projects/cockpit-docker/main/zh_CN/>\n"
 "Language: zh_CN\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -77,8 +77,8 @@ msgid "Author"
 msgstr "作者"
 
 #: src/app.jsx:675
-msgid "Automatically start podman on boot"
-msgstr "开机自动启动 podman"
+msgid "Automatically start docker on boot"
+msgstr "开机自动启动 docker"
 
 #: src/Containers.jsx:495 src/Containers.jsx:498 src/Containers.jsx:553
 msgid "CPU"
@@ -134,9 +134,9 @@ msgstr "点击以查看公布的端口"
 msgid "Click to see volumes"
 msgstr "点击以查看卷"
 
-#: org.cockpit-project.podman.metainfo.xml:6
-msgid "Cockpit component for Podman containers"
-msgstr "Podman 容器的 Cockpit 组件"
+#: org.cockpit-project.docker.metainfo.xml:6
+msgid "Cockpit component for Docker containers"
+msgstr "Docker 容器的 Cockpit 组件"
 
 #: src/ContainerCommitModal.jsx:112 src/ContainerDetails.jsx:40
 #: src/ContainerHealthLogs.jsx:67 src/ImageDetails.jsx:15
@@ -878,17 +878,17 @@ msgstr "创建 Pod 失败"
 msgid "Pod name"
 msgstr "Pod 名称"
 
-#: org.cockpit-project.podman.metainfo.xml:5
-msgid "Podman"
-msgstr "Podman"
+#: org.cockpit-project.docker.metainfo.xml:5
+msgid "Docker"
+msgstr "Docker"
 
 #: src/index.html:20 src/manifest.json:0
-msgid "Podman containers"
-msgstr "Podman 容器"
+msgid "Docker containers"
+msgstr "Docker 容器"
 
 #: src/app.jsx:671
-msgid "Podman service is not active"
-msgstr "Podman 服务未激活"
+msgid "Docker service is not active"
+msgstr "Docker 服务未激活"
 
 #: src/PodCreateModal.jsx:123 src/ImageRunModal.jsx:937
 msgid "Port mapping"
@@ -1089,8 +1089,8 @@ msgid "Start period"
 msgstr "开始期间"
 
 #: src/app.jsx:678
-msgid "Start podman"
-msgstr "启动 podman"
+msgid "Start docker"
+msgstr "启动 docker"
 
 #: src/ImageSearchModal.jsx:190
 msgid "Start typing to look for images."
@@ -1127,8 +1127,8 @@ msgid "System"
 msgstr "系统"
 
 #: src/app.jsx:724
-msgid "System Podman service is also available"
-msgstr "系统 Podman 服务同样可用"
+msgid "System Docker service is also available"
+msgstr "系统 Docker 服务同样可用"
 
 #: src/PublishPort.jsx:70
 msgid "TCP"
@@ -1142,9 +1142,9 @@ msgstr "标签"
 msgid "Tags"
 msgstr "标签"
 
-#: org.cockpit-project.podman.metainfo.xml:10
-msgid "The Cockpit user interface for Podman containers."
-msgstr "Podman 容器的 Cockpit 用户界面。"
+#: org.cockpit-project.docker.metainfo.xml:10
+msgid "The Cockpit user interface for Docker containers."
+msgstr "Docker 容器的 Cockpit 用户界面。"
 
 #: src/ImageRunModal.jsx:1024
 msgid "The initialization time needed for a container to bootstrap."
@@ -1203,8 +1203,8 @@ msgid "User"
 msgstr "用户"
 
 #: src/app.jsx:731
-msgid "User Podman service is also available"
-msgstr "用户 Podman 服务同样可用"
+msgid "User Docker service is also available"
+msgstr "用户 Docker 服务同样可用"
 
 #: src/PodCreateModal.jsx:114 src/ImageRunModal.jsx:726
 #: src/ImageRunModal.jsx:750
@@ -1265,8 +1265,8 @@ msgid "pod group"
 msgstr "pod 组"
 
 #: src/manifest.json:0
-msgid "podman"
-msgstr "podman"
+msgid "docker"
+msgstr "docker"
 
 #: src/Containers.jsx:522
 msgid "ports"

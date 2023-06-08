@@ -22,7 +22,7 @@ function sortTags(a, b) {
 
 export const ImageDeleteModal = ({ imageWillDelete, onAddNotification }) => {
     const Dialogs = useDialogs();
-    const repoTags = imageWillDelete.RepoTags ? imageWillDelete.RepoTags : [];
+    const repoTags = imageWillDelete.RepoTags.length > 0 ? imageWillDelete.RepoTags : [];
 
     const [tags, setTags] = useState(repoTags.sort(sortTags).reduce((acc, item, i) => {
         acc[item] = (i === 0);

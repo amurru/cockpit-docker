@@ -10,7 +10,7 @@ TARFILE=$(RPM_NAME)-$(VERSION).tar.xz
 NODE_CACHE=$(RPM_NAME)-node-$(VERSION).tar.xz
 SPEC=$(RPM_NAME).spec
 PREFIX ?= /usr/local
-APPSTREAMFILE=org.cockpit-project.$(PACKAGE_NAME).metainfo.xml
+APPSTREAMFILE=me.chabad360.$(PACKAGE_NAME).metainfo.xml
 VM_IMAGE=$(CURDIR)/test/images/$(TEST_OS)
 # stamp file to check for node_modules/
 NODE_MODULES_TEST=package-lock.json
@@ -35,7 +35,6 @@ COCKPIT_REPO_FILES = \
 	pkg/lib \
 	test/common \
 	tools/git-utils.sh \
-	tools/make-bots \
 	tools/node-modules \
 	$(NULL)
 
@@ -170,7 +169,7 @@ $(VM_IMAGE): $(TARFILE) packaging/debian/rules packaging/debian/control packagin
 	# HACK for ostree images: skip the rpm build/install
 	if [ "$$TEST_OS" = "fedora-coreos" ] || [ "$$TEST_OS" = "rhel4edge" ]; then \
 	    bots/image-customize --verbose --fresh --no-network --run-command 'mkdir -p /usr/local/share/cockpit' \
-	                         --upload dist/:/usr/local/share/cockpit/podman \
+	                         --upload dist/:/usr/local/share/cockpit/docker \
 	                         --script $(CURDIR)/test/vm.install $(TEST_OS); \
 	else \
 	    bots/image-customize --verbose --fresh --no-network $(VM_CUSTOMIZE_FLAGS) --build $(TARFILE) \
@@ -210,6 +209,12 @@ test/reference: test/common
 # See https://www.gnu.org/software/make/manual/html_node/Force-Targets.html
 FORCE:
 $(NODE_MODULES_TEST): FORCE tools/node-modules
-	tools/node-modules make_package_lock_json
+	tools/node-modules make_package_lock_json || ( \
+		sed -i 's/"name": "podman"/"name": "$(PACKAGE_NAME)"/' node_modules/.package.json && \
+		sed -i 's/"description": "Cockpit UI for Podman Containers"/"description": "Cockpit UI for Docker Containers"/' node_modules/.package.json && \
+		sed -i 's/"repository": "git@github.com:cockpit-project\/cockpit-podman.git"/"repository": "https:\/\/github.com\/chabad360\/cockpit-docker.git"/' node_modules/.package.json && \
+		sed -i 's/"name": "podman"/"name": "$(PACKAGE_NAME)"/' node_modules/.package-lock.json && \
+		tools/node-modules make_package_lock_json \
+	)
 
 .PHONY: all clean install devel-install devel-uninstall print-version dist rpm prepare-check check vm print-vm

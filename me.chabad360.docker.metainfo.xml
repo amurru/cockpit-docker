@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="addon">
-  <id>org.cockpit_project.podman</id>
+  <id>me.chabad360.docker</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <name>Podman</name>
+  <name>Docker</name>
   <summary>
-    Cockpit component for Podman containers
+    Cockpit component for Docker containers
   </summary>
   <description>
     <p>
-      The Cockpit user interface for Podman containers.
+      The Cockpit user interface for Docker containers.
     </p>
   </description>
   <extends>org.cockpit_project.cockpit</extends>
-  <launchable type="cockpit-manifest">podman</launchable>
+  <launchable type="cockpit-manifest">docker</launchable>
 </component>

@@ -15,14 +15,14 @@ export const renderContainerPublishedPorts = (ports) => {
         return null;
 
     const result = ports.map(port => {
-        // podman v4 has different names than v3
-        const protocol = port.protocol;
-        const hostPort = port.hostPort || port.host_port;
-        const containerPort = port.containerPort || port.container_port;
-        const hostIp = port.hostIP || port.host_ip || '0.0.0.0';
+        // docker v4 has different names than v3
+        const protocol = port.Type;
+        const hostPort = port.PublicPort;
+        const containerPort = port.PrivatePort;
+        const hostIp = port.IP || '0.0.0.0';
 
         return (
-            <ListItem key={ protocol + hostPort + containerPort }>
+            <ListItem key={ protocol + hostIp + hostPort + containerPort }>
                 { hostIp }:{ hostPort } &rarr; { containerPort }/{ protocol }
             </ListItem>
         );
@@ -51,8 +51,8 @@ export const renderContainerVolumes = (volumes) => {
 };
 
 const ContainerEnv = ({ containerEnv, imageEnv }) => {
-    // filter out some Environment variables set by podman or by image
-    const toRemoveEnv = [...imageEnv, 'container=podman'];
+    // filter out some Environment variables set by docker or by image
+    const toRemoveEnv = [...imageEnv, 'container=docker'];
     let toShow = containerEnv.filter(variable => {
         if (toRemoveEnv.includes(variable)) {
             return false;

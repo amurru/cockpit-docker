@@ -15,17 +15,20 @@
 /Test*.png
 /bots
 /cockpit-*.tar.xz
-/cockpit-podman.spec
+/cockpit-docker.spec
 /dist/
 /package-lock.json
 /pkg/
 /tmp/
 /tools/
+/node_modules/
+/.idea/
+/.vscode/
  
 # subdirs (/subdir/...)
 /packaging/arch/PKGBUILD
 /packaging/debian/changelog
 /po/*.pot
- /po/LINGUAS
+/po/LINGUAS
 /test/common/
 /test/images/

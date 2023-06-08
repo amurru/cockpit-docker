@@ -25,10 +25,10 @@ export const Volume = ({ id, item, onChange, idx, removeitem, additem, options, 
                     onChange={value => onChange(idx, 'containerPath', value)} />
             </FormGroup>
             <FormGroup className="pf-m-2-col-on-md" label={_("Mode")} fieldId={id + "-mode"}>
-                <Checkbox id={id + "-mode"}
+                <Checkbox id={id + "-rw"}
                     label={_("Writable")}
-                    isChecked={item.mode == "rw"}
-                    onChange={(_event, value) => onChange(idx, 'mode', value ? "rw" : "ro")} />
+                    isChecked={!item.readOnly}
+                    onChange={(_event, value) => onChange(idx, 'readOnly', !value)} />
             </FormGroup>
             { options && options.selinuxAvailable &&
             <FormGroup className="pf-m-3-col-on-md" label={_("SELinux")} fieldId={id + "-selinux"}>

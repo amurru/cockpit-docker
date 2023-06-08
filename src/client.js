@@ -1,19 +1,13 @@
 import rest from './rest.js';
 
-const PODMAN_SYSTEM_ADDRESS = "/run/podman/podman.sock";
-export const VERSION = "/v1.12/";
+const DOCKER_SYSTEM_ADDRESS = "/var/run/docker.sock";
+export const VERSION = "/v1.43";
 
 export function getAddress(system) {
-    if (system)
-        return PODMAN_SYSTEM_ADDRESS;
-    const xrd = sessionStorage.getItem('XDG_RUNTIME_DIR');
-    if (xrd)
-        return (xrd + "/podman/podman.sock");
-    console.warn("$XDG_RUNTIME_DIR is not present. Cannot use user service.");
-    return "";
+    return DOCKER_SYSTEM_ADDRESS;
 }
 
-function podmanCall(name, method, args, system, body) {
+function dockerCall(name, method, args, system, body) {
     const options = {
         method,
         path: VERSION + name,
@@ -21,10 +15,15 @@ function podmanCall(name, method, args, system, body) {
         params: args,
     };
 
+    if (method === "POST" && body)
+        options.headers = { "Content-Type": "application/json" };
+
+    // console.log("dockerCall", options);
+
     return rest.call(getAddress(system), system, options);
 }
 
-function podmanMonitor(name, method, args, callback, system) {
+function dockerMonitor(name, method, args, callback, system) {
     const options = {
         method,
         path: VERSION + name,
@@ -32,13 +31,15 @@ function podmanMonitor(name, method, args, callback, system) {
         params: args,
     };
 
+    // console.log("dockerMonitor", options);
+
     const connection = rest.connect(getAddress(system), system);
     return connection.monitor(options, callback, system);
 }
 
 export function streamEvents(system, callback) {
     return new Promise((resolve, reject) => {
-        podmanMonitor("libpod/events", "GET", {}, callback, system)
+        dockerMonitor("/events", "GET", {}, callback, system)
                 .then(reply => resolve(JSON.parse(reply)))
                 .catch(reject);
     });
@@ -47,7 +48,7 @@ export function streamEvents(system, callback) {
 export function getInfo(system) {
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error("timeout")), 5000);
-        podmanCall("libpod/info", "GET", {}, system)
+        dockerCall("/info", "GET", {}, system)
                 .then(reply => resolve(JSON.parse(reply)))
                 .catch(reject)
                 .finally(() => clearTimeout(timeout));
@@ -60,48 +61,51 @@ export function getContainers(system, id) {
         if (id)
             options.filters = JSON.stringify({ id: [id] });
 
-        podmanCall("libpod/containers/json", "GET", options, system)
+        dockerCall("/containers/json", "GET", options, system)
                 .then(reply => resolve(JSON.parse(reply)))
                 .catch(reject);
     });
 }
 
-export const getContainerStats = (system, callback) => podmanMonitor("libpod/containers/stats", "GET", { stream: true }, callback, system);
+export const getContainerStats = (system, id, callback) => dockerMonitor("/containers/" + id + "/stats", "GET", { stream: true }, callback, system);
 
 export function inspectContainer(system, id) {
     return new Promise((resolve, reject) => {
         const options = {
             size: false // set true to display filesystem usage
         };
-        podmanCall("libpod/containers/" + id + "/json", "GET", options, system)
+        dockerCall("/containers/" + id + "/json", "GET", options, system)
                 .then(reply => resolve(JSON.parse(reply)))
                 .catch(reject);
     });
 }
 
-export const delContainer = (system, id, force) => podmanCall("libpod/containers/" + id, "DELETE", { force }, system);
+export const delContainer = (system, id, force) => dockerCall("/containers/" + id, "DELETE", { force }, system);
 
-export const renameContainer = (system, id, config) => podmanCall("libpod/containers/" + id + "/rename", "POST", config, system);
+export const renameContainer = (system, id, config) => dockerCall("/containers/" + id + "/rename", "POST", config, system);
 
 export function createContainer(system, config) {
     return new Promise((resolve, reject) => {
-        podmanCall("libpod/containers/create", "POST", {}, system, JSON.stringify(config))
+        dockerCall("/containers/create", "POST", {}, system, JSON.stringify(config))
                 .then(reply => resolve(JSON.parse(reply)))
                 .catch(reject);
     });
 }
 
-export const commitContainer = (system, commitData) => podmanCall("libpod/commit", "POST", commitData, system);
+export const commitContainer = (system, commitData) => dockerCall("/commit", "POST", commitData, system);
 
-export const postContainer = (system, action, id, args) => podmanCall("libpod/containers/" + id + "/" + action, "POST", args, system);
+export const postContainer = (system, action, id, args) => dockerCall("/containers/" + id + "/" + action, "POST", args, system);
 
-export const runHealthcheck = (system, id) => podmanCall("libpod/containers/" + id + "/healthcheck", "GET", {}, system);
+export const runHealthcheck = (system, id) => dockerCall("/containers/" + id + "/healthcheck", "GET", {}, system);
 
-export const postPod = (system, action, id, args) => podmanCall("libpod/pods/" + id + "/" + action, "POST", args, system);
+// export const postPod = (system, action, id, args) => dockerCall("/pods/" + id + "/" + action, "POST", args, system);
+export const postPod = (system, action, id, args) => new Promise((resolve, reject) => reject(new Error("not implemented")));
 
-export const delPod = (system, id, force) => podmanCall("libpod/pods/" + id, "DELETE", { force }, system);
+// export const delPod = (system, id, force) => dockerCall("/pods/" + id, "DELETE", { force }, system);
+export const delPod = (system, id, force) => new Promise((resolve, reject) => reject(new Error("not implemented")));
 
-export const createPod = (system, config) => podmanCall("libpod/pods/create", "POST", {}, system, JSON.stringify(config));
+// export const createPod = (system, config) => dockerCall("/pods/create", "POST", {}, system, JSON.stringify(config));
+export const createPod = (system, config) => new Promise((resolve, reject) => reject(new Error("not implemented")));
 
 export function execContainer(system, id) {
     const args = {
@@ -113,7 +117,7 @@ export function execContainer(system, id) {
     };
 
     return new Promise((resolve, reject) => {
-        podmanCall("libpod/containers/" + id + "/exec", "POST", {}, system, JSON.stringify(args))
+        dockerCall("/containers/" + id + "/exec", "POST", {}, system, JSON.stringify(args))
                 .then(reply => resolve(JSON.parse(reply)))
                 .catch(reject);
     });
@@ -129,7 +133,8 @@ export function resizeContainersTTY(system, id, exec, width, height) {
     if (!exec)
         point = "exec/";
 
-    return podmanCall("libpod/" + point + id + "/resize", "POST", args, system);
+    console.log("resizeContainersTTY", point + id + "/resize", args);
+    return dockerCall("/" + point + id + "/resize", "POST", args, system);
 }
 
 function parseImageInfo(info) {
@@ -151,7 +156,7 @@ export function getImages(system, id) {
         const options = {};
         if (id)
             options.filters = JSON.stringify({ id: [id] });
-        podmanCall("libpod/images/json", "GET", options, system)
+        dockerCall("/images/json", "GET", options, system)
                 .then(reply => {
                     const immages = JSON.parse(reply);
                     const images = {};
@@ -159,7 +164,7 @@ export function getImages(system, id) {
 
                     for (const image of immages || []) {
                         images[image.Id] = image;
-                        promises.push(podmanCall("libpod/images/" + image.Id + "/json", "GET", {}, system));
+                        promises.push(dockerCall("/images/" + image.Id + "/json", "GET", {}, system));
                     }
 
                     Promise.all(promises)
@@ -178,14 +183,15 @@ export function getImages(system, id) {
 }
 
 export function getPods(system, id) {
-    return new Promise((resolve, reject) => {
-        const options = {};
-        if (id)
-            options.filters = JSON.stringify({ id: [id] });
-        podmanCall("libpod/pods/json", "GET", options, system)
-                .then(reply => resolve(JSON.parse(reply)))
-                .catch(reject);
-    });
+    // return new Promise((resolve, reject) => {
+    //     const options = {};
+    //     if (id)
+    //         options.filters = JSON.stringify({ id: [id] });
+    //     dockerCall("/pods/json", "GET", options, system)
+    //             .then(reply => resolve(JSON.parse(reply)))
+    //             .catch(reject);
+    // });
+    return new Promise((resolve, reject) => reject(new Error("not implemented")));
 }
 
 export function delImage(system, id, force) {
@@ -193,20 +199,20 @@ export function delImage(system, id, force) {
         const options = {
             force,
         };
-        podmanCall("libpod/images/" + id, "DELETE", options, system)
+        dockerCall("/images/" + id, "DELETE", options, system)
                 .then(reply => resolve(JSON.parse(reply)))
                 .catch(reject);
     });
 }
 
-export const untagImage = (system, id, repo, tag) => podmanCall("libpod/images/" + id + "/untag", "POST", { repo, tag }, system);
+export const untagImage = (system, id, repo, tag) => dockerCall("/images/" + id + "/untag", "POST", { repo, tag }, system);
 
 export function pullImage(system, reference) {
     return new Promise((resolve, reject) => {
         const options = {
-            reference,
+            fromImage: reference,
         };
-        podmanCall("libpod/images/pull", "POST", options, system)
+        dockerCall("/images/create", "POST", options, system)
                 .then(r => {
                     // Need to check the last response if it contains error
                     const responses = r.trim().split("\n");
@@ -225,7 +231,10 @@ export function pullImage(system, reference) {
 
 export function pruneUnusedImages(system) {
     return new Promise((resolve, reject) => {
-        podmanCall("libpod/images/prune?all=true", "POST", {}, system).then(resolve)
+        const options = {
+            filters: JSON.stringify({ dangling: ["false"] }),
+        };
+        dockerCall("/images/prune", "POST", options, system).then(resolve)
                 .then(reply => resolve(JSON.parse(reply)))
                 .catch(reject);
     });
@@ -233,10 +242,10 @@ export function pruneUnusedImages(system) {
 
 export function imageHistory(system, id) {
     return new Promise((resolve, reject) => {
-        podmanCall(`libpod/images/${id}/history`, "GET", {}, system)
+        dockerCall(`/images/${id}/history`, "GET", {}, system)
                 .then(reply => resolve(JSON.parse(reply)))
                 .catch(reject);
     });
 }
 
-export const imageExists = (system, id) => podmanCall("libpod/images/" + id + "/exists", "GET", {}, system);
+export const imageExists = (system, id) => dockerCall("/images/" + id + "/json", "GET", {}, system);

@@ -1,11 +1,11 @@
 {
     "menu": {
         "index": {
-            "label": "Podman containers",
+            "label": "Docker containers",
             "order": 50,
             "keywords": [
                 {
-                    "matches": ["podman", "container", "image"]
+                    "matches": ["docker", "container", "image"]
                 }
             ]
         }

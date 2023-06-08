@@ -27,10 +27,10 @@ if grep -q platform:el8 /etc/os-release; then
 fi
 
 # HACK: ensure that critical components are up to date: https://github.com/psss/tmt/issues/682
-dnf update -y podman crun conmon criu
+dnf update -y docker crun conmon criu
 
 # Show critical package versions
-rpm -q runc crun podman criu kernel-core selinux-policy cockpit-podman cockpit-bridge || true
+rpm -q runc crun docker criu kernel-core selinux-policy cockpit-docker cockpit-bridge || true
 
 # create user account for logging in
 if ! id admin 2>/dev/null; then
@@ -58,19 +58,19 @@ chown -R runtest "$SOURCE"
 echo core > /proc/sys/kernel/core_pattern
 
 # grab a few images to play with; tests run offline, so they cannot download images
-podman rmi --all
+docker rmi --all
 
 # set up our expected images, in the same way that we do for upstream CI
-curl https://raw.githubusercontent.com/cockpit-project/bots/main/images/scripts/lib/podman-images.setup | sh -eux
+curl https://raw.githubusercontent.com/cockpit-project/bots/main/images/scripts/lib/docker-images.setup | sh -eux
 
-# copy images for user podman tests; podman insists on user session
+# copy images for user docker tests; docker insists on user session
 loginctl enable-linger $(id -u admin)
 for img in localhost/test-alpine localhost/test-busybox localhost/test-registry; do
-    podman save  $img | sudo -i -u admin podman load
+    docker save  $img | sudo -i -u admin docker load
 done
 loginctl disable-linger $(id -u admin)
 
-systemctl enable --now cockpit.socket podman.socket
+systemctl enable --now cockpit.socket docker.socket
 
 # Run tests as unprivileged user
 su - -c "env TEST_BROWSER=firefox SOURCE=$SOURCE LOGS=$LOGS $TESTS/run-test.sh $PLAN" runtest

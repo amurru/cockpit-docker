@@ -17,4 +17,4 @@ export LINT=1
 
 make codecheck
 make check
-make po/podman.pot
+make po/docker.pot
