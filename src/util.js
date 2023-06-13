@@ -43,7 +43,7 @@ export function format_cpu_usage(stats) {
         const cpu_delta = cpu_usage - precpu_usage;
         const system_delta = system_cpu_usage - precpu_system_cpu_usage;
         if (system_delta > 0 && cpu_delta > 0)
-            cpu_percent = (cpu_delta / system_delta) * stats.cpu_stats.cpu_usage.percpu_usage.length * 100;
+            cpu_percent = (cpu_delta / system_delta) * stats.cpu_stats.online_cpus * 100;
     }
 
     return cpu_percent.toFixed(2) + "%";
