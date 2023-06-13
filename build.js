@@ -16,7 +16,7 @@ import { esbuildStylesPlugins } from './pkg/lib/esbuild-common.js';
 const useWasm = os.arch() !== 'x64';
 const esbuild = (await import(useWasm ? 'esbuild-wasm' : 'esbuild'));
 
-const production = process.env.NODE_ENV === 'production' && !process.env.ESBUILD_WATCH === "true";
+const production = process.env.NODE_ENV === 'production' && !process.env.ESBUILD_WATCH;
 const watchMode = process.env.ESBUILD_WATCH === "true" || false;
 // linters dominate the build time, so disable them for production builds by default, but enable in watch mode
 const lint = process.env.LINT ? (process.env.LINT !== '0') : (watchMode || !production);
@@ -86,6 +86,7 @@ const context = await esbuild.context({
 });
 
 try {
+    console.log(`Building ${production ? "for production" : "for dev"}...`);
     await context.rebuild();
 } catch (e) {
     if (!watchMode)
