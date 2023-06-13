@@ -379,7 +379,7 @@ class Containers extends React.Component {
         const info_block = (
             <div className="container-block">
                 <span className="container-name">{container.Names}</span>
-                <small>{image}</small>
+                <small>{image.includes("sha256:") ? utils.truncate_id(image) : image}</small>
                 <small>{utils.quote_cmdline(container.Command)}</small>
             </div>
         );
@@ -776,12 +776,6 @@ class Containers extends React.Component {
                                             rows={[]}
                                             sortBy={{ index: 0, direction: SortByDirection.asc }} />
                             : Object.keys(partitionedContainers)
-                                    .sort((a, b) => {
-                                        if (a == "no-pod") return -1;
-                                        else if (b == "no-pod") return 1;
-
-                                        return this.props.pods[a].Name > this.props.pods[b].Name ? 1 : -1;
-                                    })
                                     .map(section => {
                                         const tableProps = {};
                                         const rows = partitionedContainers[section].map(container => {
