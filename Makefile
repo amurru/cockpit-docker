@@ -209,12 +209,6 @@ test/reference: test/common
 # See https://www.gnu.org/software/make/manual/html_node/Force-Targets.html
 FORCE:
 $(NODE_MODULES_TEST): FORCE tools/node-modules
-	tools/node-modules make_package_lock_json || ( \
-		sed -i 's/"name": "podman"/"name": "$(PACKAGE_NAME)"/' node_modules/.package.json && \
-		sed -i 's/"description": "Cockpit UI for Podman Containers"/"description": "Cockpit UI for Docker Containers"/' node_modules/.package.json && \
-		sed -i 's/"repository": "git@github.com:cockpit-project\/cockpit-podman.git"/"repository": "https:\/\/github.com\/chabad360\/cockpit-docker.git"/' node_modules/.package.json && \
-		sed -i 's/"name": "podman"/"name": "$(PACKAGE_NAME)"/' node_modules/.package-lock.json && \
-		tools/node-modules make_package_lock_json \
-	)
+	./node-modules-fix.sh
 
 .PHONY: all clean install devel-install devel-uninstall print-version dist rpm prepare-check check vm print-vm
