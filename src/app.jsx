@@ -267,32 +267,32 @@ class Application extends React.Component {
                 });
     }
 
-    updatePodsAfterEvent(system) {
-        client.getPods(system)
-                .then(reply => {
-                    this.setState(prevState => {
-                        // Copy only pods that could not be deleted with this event
-                        // So when event from system come, only copy user pods and vice versa
-                        const copyPods = {};
-                        Object.entries(prevState.pods || {}).forEach(([id, pod]) => {
-                            if (pod.isSystem !== system)
-                                copyPods[id] = pod;
-                        });
-                        for (const pod of reply || []) {
-                            pod.isSystem = system;
-                            copyPods[pod.Id] = pod;
-                        }
+    // updatePodsAfterEvent(system) {
+    //     client.getPods(system)
+    //             .then(reply => {
+    //                 this.setState(prevState => {
+    //                     // Copy only pods that could not be deleted with this event
+    //                     // So when event from system come, only copy user pods and vice versa
+    //                     const copyPods = {};
+    //                     Object.entries(prevState.pods || {}).forEach(([id, pod]) => {
+    //                         if (pod.isSystem !== system)
+    //                             copyPods[id] = pod;
+    //                     });
+    //                     for (const pod of reply || []) {
+    //                         pod.isSystem = system;
+    //                         copyPods[pod.Id] = pod;
+    //                     }
 
-                        return {
-                            pods: copyPods,
-                            [system ? "systemPodsLoaded" : "userPodsLoaded"]: true,
-                        };
-                    });
-                })
-                .catch(ex => {
-                    console.warn("Failed to do Update Pods:", JSON.stringify(ex));
-                });
-    }
+    //                     return {
+    //                         pods: copyPods,
+    //                         [system ? "systemPodsLoaded" : "userPodsLoaded"]: true,
+    //                     };
+    //                 });
+    //             })
+    //             .catch(ex => {
+    //                 console.warn("Failed to do Update Pods:", JSON.stringify(ex));
+    //             });
+    // }
 
     updateContainerAfterEvent(id, system, event) {
         client.getContainers(system, id)
@@ -344,20 +344,20 @@ class Application extends React.Component {
                 });
     }
 
-    updatePodAfterEvent(id, system) {
-        client.getPods(system, id)
-                .then(reply => {
-                    if (reply && reply.length > 0) {
-                        reply = reply[0];
+    // updatePodAfterEvent(id, system) {
+    //     client.getPods(system, id)
+    //             .then(reply => {
+    //                 if (reply && reply.length > 0) {
+    //                     reply = reply[0];
 
-                        reply.isSystem = system;
-                        this.updateState("pods", reply.Id, reply);
-                    }
-                })
-                .catch(ex => {
-                    console.warn("Failed to do Update Pod:", JSON.stringify(ex));
-                });
-    }
+    //                     reply.isSystem = system;
+    //                     this.updateState("pods", reply.Id, reply);
+    //                 }
+    //             })
+    //             .catch(ex => {
+    //                 console.warn("Failed to do Update Pod:", JSON.stringify(ex));
+    //             });
+    // }
 
     handleImageEvent(event, system) {
         switch (event.Action) {
@@ -398,13 +398,6 @@ class Application extends React.Component {
          */
         case 'exec_start':
         case 'start':
-            // HACK: We don't get 'started' event for pods got started by the first container which was added to them
-            // https://github.com/containers/docker/issues/7213
-            if (event.Actor.Attributes.podId) {
-                this.updatePodAfterEvent(event.Actor.Attributes.podId, system);
-            } else {
-                this.updatePodsAfterEvent(system);
-            }
             this.updateContainerAfterEvent(event.Actor.ID, system, event);
             break;
         case 'checkpoint':
@@ -430,13 +423,6 @@ class Application extends React.Component {
         case 'destroy':
         case 'remove':
         case 'cleanup':
-            // HACK: we don't get a pod event when a container in a pod is removed.
-            // https://github.com/containers/docker/issues/15408
-            if (event.Actor.Attributes.podId) {
-                this.updatePodAfterEvent(event.Actor.Attributes.podId, system);
-            } else {
-                this.updatePodsAfterEvent(system);
-            }
             this.updateContainersAfterEvent(system);
             break;
         /* The following events need only to update the Image list */
@@ -448,23 +434,23 @@ class Application extends React.Component {
         }
     }
 
-    handlePodEvent(event, system) {
-        switch (event.Action) {
-        case 'create':
-        case 'kill':
-        case 'pause':
-        case 'start':
-        case 'stop':
-        case 'unpause':
-            this.updatePodAfterEvent(event.Actor.ID, system);
-            break;
-        case 'remove':
-            this.updatePodsAfterEvent(system);
-            break;
-        default:
-            console.warn('Unhandled event type', event.Type, event.Action);
-        }
-    }
+    // handlePodEvent(event, system) {
+    //     switch (event.Action) {
+    //     case 'create':
+    //     case 'kill':
+    //     case 'pause':
+    //     case 'start':
+    //     case 'stop':
+    //     case 'unpause':
+    //         this.updatePodAfterEvent(event.Actor.ID, system);
+    //         break;
+    //     case 'remove':
+    //         this.updatePodsAfterEvent(system);
+    //         break;
+    //     default:
+    //         console.warn('Unhandled event type', event.Type, event.Action);
+    //     }
+    // }
 
     handleEvent(event, system) {
         switch (event.Type) {
@@ -474,9 +460,9 @@ class Application extends React.Component {
         case 'image':
             this.handleImageEvent(event, system);
             break;
-        case 'pod':
-            this.handlePodEvent(event, system);
-            break;
+        // case 'pod':
+        //     this.handlePodEvent(event, system);
+        //     break;
         case 'volume':
         case 'network':
             break;
@@ -510,7 +496,7 @@ class Application extends React.Component {
                     });
                     this.updateImagesAfterEvent(system);
                     this.updateContainersAfterEvent(system, true);
-                    this.updatePodsAfterEvent(system);
+                    // this.updatePodsAfterEvent(system);
                     client.streamEvents(system,
                                         message => this.handleEvent(message, system))
                             .then(() => {
