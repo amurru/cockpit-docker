@@ -1,7 +1,7 @@
 /*
  * This file is part of Cockpit.
  *
- * Copyright (C) 2019 Red Hat, Inc.
+ * Copyright (C) 2019 Red Hat, Inc and 2023 Jewish Education Media.
  *
  * Cockpit is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by
@@ -144,18 +144,6 @@ class ContainerTerminal extends React.Component {
             if (pos == -1)
                 return ret;
 
-            // if (data.subarray)
-            // headers = cockpit.utf8_decoder().decode(data.subarray(0, pos));
-            // else
-            // headers = cockpit.utf8_decoder().decode(data.slice(0, pos));
-
-            // const parts = headers.split("\r\n", 1)[0].split(" ");
-            // Check if we got `101` as we expect `HTTP/1.1 101 UPGRADED`
-            // if (parts[1] != "101") {
-            //     console.log(parts.slice(2).join(" "));
-            //     buffer.callback = null;
-            //     return;
-            // } else
             if (data.subarray) {
                 data = data.subarray(pos + 4);
                 ret += pos + 4;

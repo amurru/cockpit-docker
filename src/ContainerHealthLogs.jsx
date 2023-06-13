@@ -1,7 +1,7 @@
 /*
  * This file is part of Cockpit.
  *
- * Copyright (C) 2022 Red Hat, Inc.
+ * Copyright (C) 2022 Red Hat, Inc  and 2023 Jewish Education Media.
  *
  * Cockpit is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by
