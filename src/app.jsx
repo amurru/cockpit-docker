@@ -71,18 +71,13 @@ class Application extends React.Component {
             location: {},
         };
         this.onAddNotification = this.onAddNotification.bind(this);
-        this.updateState = this.updateState.bind(this);
         this.onDismissNotification = this.onDismissNotification.bind(this);
         this.onFilterChanged = this.onFilterChanged.bind(this);
         this.onOwnerChanged = this.onOwnerChanged.bind(this);
         this.onContainerFilterChanged = this.onContainerFilterChanged.bind(this);
-        this.updateImagesAfterEvent = this.updateImagesAfterEvent.bind(this);
-        this.updateContainerAfterEvent = this.updateContainerAfterEvent.bind(this);
-        this.updateContainerStats = this.updateContainerStats.bind(this);
+        this.updateContainer = this.updateContainer.bind(this);
         this.startService = this.startService.bind(this);
         this.goToServicePage = this.goToServicePage.bind(this);
-        this.handleImageEvent = this.handleImageEvent.bind(this);
-        this.handleContainerEvent = this.handleContainerEvent.bind(this);
         this.checkUserService = this.checkUserService.bind(this);
         this.onNavigate = this.onNavigate.bind(this);
     }
@@ -140,7 +135,7 @@ class Application extends React.Component {
         }
     }
 
-    onContainerFilterChanged(_event, value) {
+    onContainerFilterChanged(value) {
         this.setState({
             containersFilter: value
         });
@@ -156,18 +151,14 @@ class Application extends React.Component {
 
     updateState(state, id, newValue) {
         this.setState(prevState => {
-            const copyState = Object.assign({}, prevState[state]);
-
-            copyState[id] = newValue;
-
             return {
-                [state]: copyState,
+                [state]: { ...prevState[state], [id]: newValue }
             };
         });
     }
 
     updateContainerStats(id, system) {
-        client.getContainerStats(system, id, reply => {
+        client.streamContainerStats(system, id, reply => {
             if (reply.Error != null) // executed when container stop
                 console.warn("Failed to update container stats:", JSON.stringify(reply.message));
             else {
@@ -199,8 +190,8 @@ class Application extends React.Component {
                 .then(scriptResult => scriptResult === "0\n");
     }
 
-    updateContainersAfterEvent(system, init) {
-        client.getContainers(system)
+    initContainers(system) {
+        return client.getContainers(system)
                 .then(reply => Promise.all(
                     (reply || []).map(container =>
                         this.isContainerCheckpointPresent(container.Id, system)
@@ -220,7 +211,7 @@ class Application extends React.Component {
                             if (container.isSystem !== system)
                                 copyContainers[id] = container;
                         });
-                        for (const container of reply || []) {
+                        for (const container of reply) {
                             container.isSystem = system;
                             copyContainers[container.Id] = container;
                         }
@@ -230,17 +221,15 @@ class Application extends React.Component {
                             [system ? "systemContainersLoaded" : "userContainersLoaded"]: true,
                         };
                     });
-                    if (init) {
-                        for (const container of reply || []) {
-                            this.inspectContainerDetail(container.Id, system);
-                            this.updateContainerStats(container.Id, system);
-                        }
+                    this.updateContainerStats(system);
+                    for (const container of reply) {
+                        this.inspectContainerDetail(container.Id, system);
                     }
                 })
                 .catch(console.log);
     }
 
-    updateImagesAfterEvent(system) {
+    updateImages(system) {
         client.getImages(system)
                 .then(reply => {
                     this.setState(prevState => {
@@ -267,8 +256,8 @@ class Application extends React.Component {
                 });
     }
 
-    // updatePodsAfterEvent(system) {
-    //     client.getPods(system)
+    // updatePods(system) {
+    //     return client.getPods(system)
     //             .then(reply => {
     //                 this.setState(prevState => {
     //                     // Copy only pods that could not be deleted with this event
@@ -280,9 +269,8 @@ class Application extends React.Component {
     //                     });
     //                     for (const pod of reply || []) {
     //                         pod.isSystem = system;
-    //                         copyPods[pod.Id] = pod;
+    //                         copyPods[pod.Id + system.toString()] = pod;
     //                     }
-
     //                     return {
     //                         pods: copyPods,
     //                         [system ? "systemPodsLoaded" : "userPodsLoaded"]: true,
@@ -294,8 +282,8 @@ class Application extends React.Component {
     //             });
     // }
 
-    updateContainerAfterEvent(id, system, event) {
-        client.getContainers(system, id)
+    updateContainer(id, system, event) {
+        return client.getContainers(system, id)
                 .then(reply => Promise.all(
                     (reply || []).map(container =>
                         this.isContainerCheckpointPresent(container.Id, system)
@@ -332,7 +320,7 @@ class Application extends React.Component {
                 .catch(console.log);
     }
 
-    updateImageAfterEvent(id, system) {
+    updateImage(id, system) {
         client.getImages(system, id)
                 .then(reply => {
                     const immage = reply[id];
@@ -344,12 +332,11 @@ class Application extends React.Component {
                 });
     }
 
-    // updatePodAfterEvent(id, system) {
-    //     client.getPods(system, id)
+    // updatePod(id, system) {
+    //     return client.getPods(system, id)
     //             .then(reply => {
     //                 if (reply && reply.length > 0) {
     //                     reply = reply[0];
-
     //                     reply.isSystem = system;
     //                     this.updateState("pods", reply.Id, reply);
     //                 }
@@ -359,12 +346,14 @@ class Application extends React.Component {
     //             });
     // }
 
+    // see https://docs.podman.io/en/latest/markdown/podman-events.1.html
+
     handleImageEvent(event, system) {
         switch (event.Action) {
         case 'push':
         case 'save':
         case 'tag':
-            this.updateImageAfterEvent(event.Actor.ID, system);
+            this.updateImage(event.Actor.ID, system);
             break;
         case 'pull': // Pull event has not event.id
         case 'untag':
@@ -372,7 +361,7 @@ class Application extends React.Component {
         case 'remove':
         case 'prune':
         case 'build':
-            this.updateImagesAfterEvent(system);
+            this.updateImages(system);
             break;
         default:
             console.warn('Unhandled event type', event.Type, event.Action);
@@ -382,6 +371,8 @@ class Application extends React.Component {
     handleContainerEvent(event, system) {
         if (event.Action.includes(':'))
             event.Action = event.Action.split(':')[0];
+        const id = event.Actor.ID;
+
         switch (event.Action) {
         /* The following events do not need to trigger any state updates */
         case 'attach':
@@ -398,7 +389,7 @@ class Application extends React.Component {
          */
         case 'exec_start':
         case 'start':
-            this.updateContainerAfterEvent(event.Actor.ID, system, event);
+            this.updateContainer(id, system, event);
             break;
         case 'checkpoint':
         case 'exec_create':
@@ -408,6 +399,7 @@ class Application extends React.Component {
         case 'exec_die':
         case 'exec_died':
         case 'kill':
+        case 'cleanup':
         case 'mount':
         case 'pause':
         case 'prune':
@@ -417,17 +409,23 @@ class Application extends React.Component {
         case 'sync':
         case 'unmount':
         case 'unpause':
-        case 'rename': // rename event is available starting docker v4.1; until then the container does not get refreshed after renaming
-            this.updateContainerAfterEvent(event.Actor.ID, system, event);
+        case 'rename': // rename event is available starting podman v4.1; until then the container does not get refreshed after renaming
+            this.updateContainer(id, system, event);
             break;
-        case 'destroy':
+
         case 'remove':
-        case 'cleanup':
-            this.updateContainersAfterEvent(system);
+            this.setState(prevState => {
+                const containers = { ...prevState.containers };
+                delete containers[id];
+                let pods;
+
+                return { containers, pods };
+            });
             break;
-        /* The following events need only to update the Image list */
+
+        // only needs to update the Image list, this ought to be an image event
         case 'commit':
-            this.updateImagesAfterEvent(system);
+            this.updateImages(system);
             break;
         default:
             console.warn('Unhandled event type', event.Type, event.Action);
@@ -442,13 +440,17 @@ class Application extends React.Component {
     //     case 'start':
     //     case 'stop':
     //     case 'unpause':
-    //         this.updatePodAfterEvent(event.Actor.ID, system);
+    //         this.updatePod(event.Actor.ID, system);
     //         break;
     //     case 'remove':
-    //         this.updatePodsAfterEvent(system);
+    //         this.setState(prevState => {
+    //             const pods = { ...prevState.pods };
+    //             delete pods[event.Actor.ID + system.toString()];
+    //             return { pods };
+    //         });
     //         break;
     //     default:
-    //         console.warn('Unhandled event type', event.Type, event.Action);
+    //         console.warn('Unhandled event type ', event.Type, event.Action);
     //     }
     // }
 
@@ -494,9 +496,9 @@ class Application extends React.Component {
                         registries: reply.RegistryConfig.IndexConfigs,
                         cgroupVersion: reply.CgroupVersion,
                     });
-                    this.updateImagesAfterEvent(system);
-                    this.updateContainersAfterEvent(system, true);
-                    // this.updatePodsAfterEvent(system);
+                    this.updateImages(system);
+                    this.initContainers(system);
+                    // this.updatePods(system);
                     client.streamEvents(system,
                                         message => this.handleEvent(message, system))
                             .then(() => {
@@ -759,7 +761,7 @@ class Application extends React.Component {
                 dockerRestartAvailable={this.state.dockerRestartAvailable}
                 userDockerRestartAvailable={this.state.userDockerRestartAvailable}
                 userLingeringEnabled={this.state.userLingeringEnabled}
-                updateContainerAfterEvent={this.updateContainerAfterEvent}
+                updateContainer={this.updateContainer}
             />
         );
 
@@ -785,7 +787,7 @@ class Application extends React.Component {
                                  variant={PageSectionVariants.light}>
                         <ContainerHeader
                             handleFilterChanged={this.onFilterChanged}
-                            handleOwnerChanged={(_event, value) => this.onOwnerChanged(value)}
+                            handleOwnerChanged={this.onOwnerChanged}
                             ownerFilter={this.state.ownerFilter}
                             textFilter={this.state.textFilter}
                             twoOwners={this.state.systemServiceAvailable && this.state.userServiceAvailable}

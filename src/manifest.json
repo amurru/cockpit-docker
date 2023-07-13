@@ -1,4 +1,7 @@
 {
+    "conditions": [
+        {"path-exists": "/lib/systemd/system/docker.socket"}
+    ],
     "menu": {
         "index": {
             "label": "Docker containers",

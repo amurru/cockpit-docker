@@ -3,7 +3,7 @@ PACKAGE_NAME := $(shell awk '/"name":/ {gsub(/[",]/, "", $$2); print $$2}' packa
 RPM_NAME := cockpit-$(PACKAGE_NAME)
 VERSION := $(shell T=$$(git describe 2>/dev/null) || T=1; echo $$T | tr '-' '.')
 ifeq ($(TEST_OS),)
-TEST_OS = fedora-37
+TEST_OS = fedora-38
 endif
 export TEST_OS
 TARFILE=$(RPM_NAME)-$(VERSION).tar.xz
@@ -34,12 +34,12 @@ all: $(DIST_TEST)
 COCKPIT_REPO_FILES = \
 	pkg/lib \
 	test/common \
-	tools/git-utils.sh \
+	test/static-code \
 	tools/node-modules \
 	$(NULL)
 
 COCKPIT_REPO_URL = https://github.com/cockpit-project/cockpit.git
-COCKPIT_REPO_COMMIT = 355c0aa59e3991243e10a61183e62ea129d3261a # 292 + 8 commits
+COCKPIT_REPO_COMMIT = 6e0e545679bad03beb29c5526e2f4fe5a6b4a422 # 295 + 36 commits
 
 $(COCKPIT_REPO_FILES): $(COCKPIT_REPO_STAMP)
 COCKPIT_REPO_TREE = '$(strip $(COCKPIT_REPO_COMMIT))^{tree}'
@@ -187,8 +187,8 @@ print-vm:
 # run static code checks for python code
 PYEXEFILES=$(shell git grep -lI '^#!.*python')
 
-codecheck:
-	flake8 $(PYEXEFILES)
+codecheck: test/static-code $(NODE_MODULES_TEST)
+	test/static-code
 
 # convenience target to setup all the bits needed for the integration tests
 # without actually running them
@@ -199,8 +199,8 @@ prepare-check: $(NODE_MODULES_TEST) $(VM_IMAGE) test/common test/reference
 check: prepare-check
 	TEST_AUDIT_NO_SELINUX=1 test/common/run-tests ${RUN_TESTS_OPTIONS}
 
-bots: tools/make-bots
-	tools/make-bots
+bots: $(COCKPIT_REPO_STAMP)
+	test/common/make-bots
 
 test/reference: test/common
 	test/common/pixel-tests pull

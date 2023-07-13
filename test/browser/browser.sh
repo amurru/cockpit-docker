@@ -61,7 +61,13 @@ echo core > /proc/sys/kernel/core_pattern
 docker rmi --all
 
 # set up our expected images, in the same way that we do for upstream CI
-curl https://raw.githubusercontent.com/cockpit-project/bots/main/images/scripts/lib/docker-images.setup | sh -eux
+# this sometimes runs into network issues, so retry a few times
+for retry in $(seq 5); do
+    if curl https://raw.githubusercontent.com/cockpit-project/bots/main/images/scripts/lib/podman-images.setup | sh -eux; then
+        break
+    fi
+    sleep $((5 * retry * retry))
+done
 
 # copy images for user docker tests; docker insists on user session
 loginctl enable-linger $(id -u admin)

@@ -13,7 +13,7 @@ import { FormHelper } from 'cockpit-components-form-helper.jsx';
 
 const _ = cockpit.gettext;
 
-const ContainerRenameModal = ({ container, version, updateContainerAfterEvent }) => {
+const ContainerRenameModal = ({ container, version, updateContainer }) => {
     const Dialogs = useDialogs();
     const [name, setName] = useState(container.Names[0]);
     const [nameError, setNameError] = useState(null);
@@ -46,7 +46,7 @@ const ContainerRenameModal = ({ container, version, updateContainerAfterEvent })
                     Dialogs.close();
                     // HACK: This is a workaround for missing API rename event in docker versions less than 4.1.
                     if (version.localeCompare("4.1", undefined, { numeric: true, sensitivity: 'base' }) < 0) {
-                        updateContainerAfterEvent(container.Id, container.isSystem);
+                        updateContainer(container.Id, container.isSystem); // not-covered: only on old version
                     }
                 })
                 .catch(ex => {
@@ -55,7 +55,7 @@ const ContainerRenameModal = ({ container, version, updateContainerAfterEvent })
                 });
     };
 
-    const handleKeyPress = (event) => {
+    const handleKeyDown = (event) => {
         if (event.key === "Enter") {
             event.preventDefault();
             handleRename();
@@ -70,7 +70,7 @@ const ContainerRenameModal = ({ container, version, updateContainerAfterEvent })
                         validated={nameError ? "error" : "default"}
                         type="text"
                         aria-label={nameError}
-                        onChange={value => handleInputChange("name", value)} />
+                        onChange={(_, value) => handleInputChange("name", value)} />
                 <FormHelper fieldId="commit-dialog-image-name" helperTextInvalid={nameError} />
             </FormGroup>
         </Form>
@@ -80,7 +80,7 @@ const ContainerRenameModal = ({ container, version, updateContainerAfterEvent })
         <Modal isOpen
             position="top" variant="medium"
             onClose={Dialogs.close}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             title={cockpit.format(_("Rename container $0"), container.Names[0])}
             footer={<>
                 <Button variant="primary"

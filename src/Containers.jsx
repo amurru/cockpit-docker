@@ -6,7 +6,7 @@ import { Divider } from "@patternfly/react-core/dist/esm/components/Divider";
 import { Dropdown, DropdownItem, DropdownSeparator, KebabToggle } from '@patternfly/react-core/dist/esm/deprecated/components/Dropdown/index.js';
 import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex";
 import { Popover } from "@patternfly/react-core/dist/esm/components/Popover";
-import { LabelGroup } from "@patternfly/react-core/dist/esm/components/LabelGroup";
+import { LabelGroup } from "@patternfly/react-core/dist/esm/components/Label";
 import { Text, TextVariants } from "@patternfly/react-core/dist/esm/components/Text";
 import { FormSelect, FormSelectOption } from "@patternfly/react-core/dist/esm/components/FormSelect";
 import { Tooltip } from "@patternfly/react-core/dist/esm/components/Tooltip";
@@ -41,7 +41,7 @@ import PruneUnusedContainersModal from './PruneUnusedContainersModal.jsx';
 
 const _ = cockpit.gettext;
 
-const ContainerActions = ({ container, healthcheck, onAddNotification, version, localImages, updateContainerAfterEvent }) => {
+const ContainerActions = ({ container, healthcheck, onAddNotification, version, localImages, updateContainer }) => {
     const Dialogs = useDialogs();
     const [isActionsKebabOpen, setActionsKebabOpen] = useState(false);
     const isRunning = container.State === "running";
@@ -146,7 +146,7 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, version, 
             version.localeCompare("3.0.1", undefined, { numeric: true, sensitivity: 'base' }) >= 0) {
             Dialogs.show(<ContainerRenameModal container={container}
                                                version={version}
-                                               updateContainerAfterEvent={updateContainerAfterEvent} />);
+                                               updateContainer={updateContainer} />);
         }
     };
 
@@ -405,7 +405,7 @@ class Containers extends React.Component {
         ];
 
         if (!container.isDownloading) {
-            columns.push({ title: <ContainerActions version={this.props.version} container={container} healthcheck={healthcheck} onAddNotification={this.props.onAddNotification} localImages={localImages} updateContainerAfterEvent={this.props.updateContainerAfterEvent} />, props: { className: "pf-c-table__action" } });
+            columns.push({ title: <ContainerActions version={this.props.version} container={container} healthcheck={healthcheck} onAddNotification={this.props.onAddNotification} localImages={localImages} updateContainer={this.props.updateContainer} />, props: { className: "pf-v5-c-table__action" } });
         }
 
         const tty = containerDetail ? !!containerDetail.Config.Tty : undefined;
@@ -444,6 +444,8 @@ class Containers extends React.Component {
             props: {
                 key: container.Id,
                 "data-row-id": container.Id,
+                "data-pid": container.Pid,
+                "data-started-at": container.StartedAt,
             },
         };
     }
@@ -497,14 +499,14 @@ class Containers extends React.Component {
                             <Tooltip content={_("CPU")}>
                                 <MicrochipIcon />
                             </Tooltip>
-                            <Text component={TextVariants.p} className="pf-u-hidden-on-sm">{_("CPU")}</Text>
+                            <Text component={TextVariants.p} className="pf-v5-u-hidden-on-sm">{_("CPU")}</Text>
                             <Text component={TextVariants.p} className="pod-cpu">{podStats.cpu}%</Text>
                         </Flex>
                         <Flex className='pod-stat' spaceItems={{ default: 'spaceItemsSm' }}>
                             <Tooltip content={_("Memory")}>
                                 <MemoryIcon />
                             </Tooltip>
-                            <Text component={TextVariants.p} className="pf-u-hidden-on-sm">{_("Memory")}</Text>
+                            <Text component={TextVariants.p} className="pf-v5-u-hidden-on-sm">{_("Memory")}</Text>
                             <Text component={TextVariants.p} className="pod-memory">{utils.format_memory_and_limit(podStats.mem) || "0 KB"}</Text>
                         </Flex>
                     </>
@@ -521,7 +523,7 @@ class Containers extends React.Component {
                                         icon={<PortIcon className="pod-details-button-color" />}
                                 >
                                     {infraContainer.Ports.length}
-                                    <Text component={TextVariants.p} className="pf-u-hidden-on-sm">{_("ports")}</Text>
+                                    <Text component={TextVariants.p} className="pf-v5-u-hidden-on-sm">{_("ports")}</Text>
                                 </Button>
                             </Popover>
                         </Tooltip>
@@ -536,7 +538,7 @@ class Containers extends React.Component {
                             icon={<VolumeIcon className="pod-details-button-color" />}
                             >
                                 {infraContainerDetails.Mounts.length}
-                                <Text component={TextVariants.p} className="pf-u-hidden-on-sm">{_("volumes")}</Text>
+                                <Text component={TextVariants.p} className="pf-v5-u-hidden-on-sm">{_("volumes")}</Text>
                             </Button>
                         </Popover>
                     </Tooltip>
@@ -708,7 +710,7 @@ class Containers extends React.Component {
                         {_("Show")}
                     </ToolbarItem>
                     <ToolbarItem>
-                        <FormSelect id="containers-containers-filter" value={this.props.filter} onChange={this.props.handleFilterChange}>
+                        <FormSelect id="containers-containers-filter" value={this.props.filter} onChange={(_, value) => this.props.handleFilterChange(value)}>
                             <FormSelectOption value='all' label={_("All")} />
                             <FormSelectOption value='running' label={_("Only running")} />
                         </FormSelect>
