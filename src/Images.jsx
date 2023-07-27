@@ -67,11 +67,12 @@ class Images extends React.Component {
 
     onOpenNewImagesDialog = () => {
         const Dialogs = this.context;
-        Dialogs.show(<ImageSearchModal downloadImage={this.downloadImage}
-                                       user={this.props.user}
-                                       registries={this.props.registries}
-                                       userServiceAvailable={this.props.userServiceAvailable}
-                                       systemServiceAvailable={this.props.systemServiceAvailable} />);
+        Dialogs.show(
+            <ImageSearchModal downloadImage={this.downloadImage}
+                              user={this.props.user}
+                              userServiceAvailable={this.props.userServiceAvailable}
+                              systemServiceAvailable={this.props.systemServiceAvailable} />
+        );
     };
 
     onOpenPruneUnusedImagesDialog = () => {
@@ -135,14 +136,10 @@ class Images extends React.Component {
             { title: cockpit.format_bytes(image.Size, 1000), props: { className: "ignore-pixels", modifier: "nowrap" } },
             { title: <span className={usedByCount === 0 ? "ct-grey-text" : ""}>{usedByText}</span>, props: { className: "ignore-pixels", modifier: "nowrap" } },
             {
-                title: <ImageActions image={image} onAddNotification={this.props.onAddNotification} selinuxAvailable={this.props.selinuxAvailable}
-                                     registries={this.props.registries} user={this.props.user}
+                title: <ImageActions image={image} onAddNotification={this.props.onAddNotification}
+                                     user={this.props.user}
                                      userServiceAvailable={this.props.userServiceAvailable}
-                                     systemServiceAvailable={this.props.systemServiceAvailable}
-                                     dockerRestartAvailable={this.props.dockerRestartAvailable}
-                                     userDockerRestartAvailable={this.props.userDockerRestartAvailable}
-                                     userLingeringEnabled={this.props.userLingeringEnabled}
-                                     version={this.props.version} />,
+                                     systemServiceAvailable={this.props.systemServiceAvailable} />,
                 props: { className: 'pf-v5-c-table__action content-action' }
             },
         ];
@@ -345,23 +342,30 @@ const ImageOverActions = ({ handleDownloadNewImage, handlePruneUsedImages, unuse
     );
 };
 
-const ImageActions = ({ image, onAddNotification, registries, selinuxAvailable, user, systemServiceAvailable, userServiceAvailable, dockerRestartAvailable, userDockerRestartAvailable, userLingeringEnabled, version }) => {
+const ImageActions = ({ image, onAddNotification, user, systemServiceAvailable, userServiceAvailable }) => {
     const Dialogs = useDialogs();
     const [isActionsKebabOpen, setIsActionsKebabOpen] = useState(false);
 
     const runImage = () => {
         setIsActionsKebabOpen(false);
-        Dialogs.show(<ImageRunModal registries={registries}
-                                    selinuxAvailable={selinuxAvailable}
-                                    dockerRestartAvailable={dockerRestartAvailable}
-                                    userDockerRestartAvailable={userDockerRestartAvailable}
-                                    systemServiceAvailable={systemServiceAvailable}
-                                    userServiceAvailable={userServiceAvailable}
-                                    userLingeringEnabled={userLingeringEnabled}
-                                    user={user}
-                                    image={image}
-                                    onAddNotification={onAddNotification}
-                                    version={version} />);
+        Dialogs.show(
+            <utils.DockerInfoContext.Consumer>
+                {(dockerInfo) => (
+                    <DialogsContext.Consumer>
+                        {(Dialogs) => (
+                            <ImageRunModal
+                              systemServiceAvailable={systemServiceAvailable}
+                              userServiceAvailable={userServiceAvailable}
+                              user={user}
+                              image={image}
+                              onAddNotification={onAddNotification}
+                              dockerInfo={dockerInfo}
+                              dialogs={Dialogs}
+                            />
+                        )}
+                    </DialogsContext.Consumer>
+                )}
+            </utils.DockerInfoContext.Consumer>);
     };
 
     const removeImage = () => {

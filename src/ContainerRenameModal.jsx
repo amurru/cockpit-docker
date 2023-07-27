@@ -13,9 +13,10 @@ import { FormHelper } from 'cockpit-components-form-helper.jsx';
 
 const _ = cockpit.gettext;
 
-const ContainerRenameModal = ({ container, version, updateContainer }) => {
+const ContainerRenameModal = ({ container, updateContainer }) => {
     const Dialogs = useDialogs();
-    const [name, setName] = useState(container.Names[0]);
+    const [name, setName] = useState(container.Name);
+    const { version } = utils.useDockerInfo();
     const [nameError, setNameError] = useState(null);
     const [dialogError, setDialogError] = useState(null);
     const [dialogErrorDetail, setDialogErrorDetail] = useState(null);
@@ -50,7 +51,7 @@ const ContainerRenameModal = ({ container, version, updateContainer }) => {
                     }
                 })
                 .catch(ex => {
-                    setDialogError(cockpit.format(_("Failed to rename container $0"), container.Names[0]));
+                    setDialogError(cockpit.format(_("Failed to rename container $0"), container.Name)); // not-covered: OS error
                     setDialogErrorDetail(cockpit.format("$0: $1", ex.message, ex.reason));
                 });
     };
@@ -81,7 +82,7 @@ const ContainerRenameModal = ({ container, version, updateContainer }) => {
             position="top" variant="medium"
             onClose={Dialogs.close}
             onKeyDown={handleKeyDown}
-            title={cockpit.format(_("Rename container $0"), container.Names[0])}
+            title={cockpit.format(_("Rename container $0"), container.Name)}
             footer={<>
                 <Button variant="primary"
                         className="btn-ctr-rename"

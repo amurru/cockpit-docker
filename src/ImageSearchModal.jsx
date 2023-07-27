@@ -14,14 +14,14 @@ import { ErrorNotification } from './Notification.jsx';
 import cockpit from 'cockpit';
 import rest from './rest.js';
 import * as client from './client.js';
-import { fallbackRegistries } from './util.js';
+import { fallbackRegistries, useDockerInfo } from './util.js';
 import { useDialogs } from "dialogs.jsx";
 
 import './ImageSearchModal.css';
 
 const _ = cockpit.gettext;
 
-export const ImageSearchModal = ({ downloadImage, registries, user, userServiceAvailable, systemServiceAvailable }) => {
+export const ImageSearchModal = ({ downloadImage, user, userServiceAvailable, systemServiceAvailable }) => {
     const [searchInProgress, setSearchInProgress] = useState(false);
     const [searchFinished, setSearchFinished] = useState(false);
     const [imageIdentifier, setImageIdentifier] = useState('');
@@ -35,6 +35,7 @@ export const ImageSearchModal = ({ downloadImage, registries, user, userServiceA
     const [typingTimeout, setTypingTimeout] = useState(null);
 
     let activeConnection = null;
+    const { registries } = useDockerInfo();
     const Dialogs = useDialogs();
     // Registries to use for searching
     const searchRegistries = registries.search && registries.length !== 0 ? registries.search : fallbackRegistries;
@@ -62,7 +63,7 @@ export const ImageSearchModal = ({ downloadImage, registries, user, userServiceA
         if (searchRegistry !== "") {
             queryRegistries = [searchRegistry];
         }
-        // if a user searches for `docker.io/cockpit` let podman search in the user specified registry.
+        // if a user searches for `docker.io/cockpit` let docker search in the user specified registry.
         if (imageIdentifier.includes('/')) {
             queryRegistries = [""];
         }
@@ -116,7 +117,7 @@ export const ImageSearchModal = ({ downloadImage, registries, user, userServiceA
 
     const onToggleUser = ev => setIsSystem(ev.currentTarget.value === "system");
     const onDownloadClicked = () => {
-        const selectedImageName = imageList[selected].Name;
+        const selectedImageName = imageList[selected].name;
         if (activeConnection)
             activeConnection.close();
         Dialogs.close();
@@ -130,7 +131,7 @@ export const ImageSearchModal = ({ downloadImage, registries, user, userServiceA
     };
 
     return (
-        <Modal isOpen className="podman-search"
+        <Modal isOpen className="docker-search"
                position="top" variant="large"
                onClose={handleClose}
                title={_("Search for an image")}
@@ -141,7 +142,7 @@ export const ImageSearchModal = ({ downloadImage, registries, user, userServiceA
                                   id="image-search-tag"
                                   type='text'
                                   placeholder="latest"
-                                  value={imageTag || ''}
+                                  value={imageTag || 'latest'}
                                   onChange={(_event, value) => setImageTag(value)} />
                        </FormGroup>
                    </Form>
@@ -200,10 +201,10 @@ export const ImageSearchModal = ({ downloadImage, registries, user, userServiceA
                                     <DataListItemCells
                                               dataListCells={[
                                                   <DataListCell key="primary content">
-                                                      <span className='image-name'>{image.Name}</span>
+                                                      <span className='image-name'>{image.name}</span>
                                                   </DataListCell>,
                                                   <DataListCell key="secondary content" wrapModifier="truncate">
-                                                      <span className='image-description'>{image.Description}</span>
+                                                      <span className='image-description'>{image.description}</span>
                                                   </DataListCell>
                                               ]}
                                     />

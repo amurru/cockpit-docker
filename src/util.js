@@ -1,8 +1,21 @@
+import React, { useContext } from "react";
+
 import cockpit from 'cockpit';
 
 import * as dfnlocales from 'date-fns/locale/index.js';
 import { formatRelative } from 'date-fns';
 const _ = cockpit.gettext;
+
+export const DockerInfoContext = React.createContext();
+export const useDockerInfo = () => useContext(DockerInfoContext);
+
+export const WithDockerInfo = ({ value, children }) => {
+    return (
+        <DockerInfoContext.Provider value={value}>
+            {children}
+        </DockerInfoContext.Provider>
+    );
+};
 
 // https://github.com/containers/podman/blob/main/libpod/define/containerstate.go
 // "Restarting" comes from special handling of restart case in Application.updateContainer()
@@ -14,8 +27,8 @@ export const podStates = [_("Created"), _("Running"), _("Stopped"), _("Paused"),
 export const fallbackRegistries = ["docker.io", "quay.io"];
 
 export function debug(system, ...args) {
-    if (window.debugging === "all" || window.debugging?.includes("podman"))
-        console.debug("podman", system ? "system" : "user", ...args);
+    if (window.debugging === "all" || window.debugging?.includes("docker"))
+        console.debug("docker", system ? "system" : "user", ...args);
 }
 
 export function truncate_id(id) {
@@ -30,6 +43,8 @@ export function truncate_id(id) {
 }
 
 export function localize_time(unix_timestamp) {
+    if (unix_timestamp === undefined || isNaN(unix_timestamp))
+        return "";
     const locale = (cockpit.language == "en") ? dfnlocales.enUS : dfnlocales[cockpit.language.replace('_', '')];
     return formatRelative(unix_timestamp * 1000, Date.now(), { locale });
 }

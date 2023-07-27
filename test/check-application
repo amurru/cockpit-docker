@@ -29,11 +29,6 @@ IMG_BUSYBOX_LATEST = IMG_BUSYBOX + ":latest"
 IMG_REGISTRY = "localhost/test-registry"
 IMG_REGISTRY_LATEST = IMG_REGISTRY + ":latest"
 
-# Ubuntu 2204 lacks user systemd units
-# https://github.com/containers/docker/commit/9312d458b4254b48e331d1ae40cb2f6d0fec9bd0
-DISTROS_WITHOUT_DOCKER_USER_RESTART = ['ubuntu-stable', 'ubuntu-2204']
-DISTROS_WITHOUT_DOCKER_POD_VOLUMES = ['ubuntu-stable', 'ubuntu-2204', 'debian-stable', 'debian-testing']
-
 
 def docker_version(cls):
     version = cls.execute(False, "docker -v").strip().split(' ')[-1]
@@ -276,18 +271,19 @@ class TestApplication(testlib.MachineCase):
         b.click(f"ul[aria-labelledby=pod-{podName}-{podOwner}-action-toggle] li > button.pod-action-{action.lower()}")
         b.wait_not_present(f"ul[aria-labelledby=pod-{podName}-{podOwner}-action-toggle]")
 
-    def getPid(self, container: str, *, auth: bool) -> int:
-        out = self.execute(auth, "docker inspect --format '{{.State.Pid}}' " + container).strip()
-        return int(out)
+    def getStartTime(self, container: str, *, auth: bool) -> str:
+        # don't format the raw time strings from the API, force json format
+        out = self.execute(auth, "docker inspect --format '{{json .State.StartedAt}}' " + container)
+        return out.strip().replace('"', '')
 
-    def waitPidChange(self, container: str, old_pid: int, *, auth: bool) -> int:
+    def waitRestart(self, container: str, old_start: str, *, auth: bool) -> int:
         for _ in range(10):
-            new_pid = self.getPid(container, auth=auth)
-            if new_pid != 0 and new_pid != old_pid:
-                return new_pid
+            new_start = self.getStartTime(container, auth=auth)
+            if new_start > old_start:
+                return new_start
             time.sleep(1)
         else:
-            self.fail("Timed out waiting for pid change")
+            self.fail("Timed out waiting for StartedAt change")
 
     # def testPods(self):
     #     b = self.browser
@@ -363,9 +359,9 @@ class TestApplication(testlib.MachineCase):
         # self.waitPodContainer("pod-1", [{"name": "test-pod-1-system", "image": IMG_ALPINE,
         #                                  "command": "sleep 100", "state": "Running", "id": containerId}])
 
-        # old_pid = self.getPid("test-pod-1-system", auth=True)
+        # old_start = self.getStartTime("test-pod-1-system", auth=True)
         # self.performPodAction("pod-1", "system", "Restart")
-        # self.waitPidChange("test-pod-1-system", old_pid, auth=True)
+        # self.waitRestart("test-pod-1-system", old_start, auth=True)
 
         # self.performPodAction("pod-1", "system", "Delete")
         # b.click(".pf-v5-c-modal-box button:contains(Delete)")
@@ -1027,7 +1023,7 @@ class TestApplication(testlib.MachineCase):
                 # HACK: Sometimes the value is not shown fully. FIXME
                 b.set_input_text("#search-image-dialog-name", self.imageName, value_check=False)
                 if self.imageTag:
-                    b.set_input_text(".image-tag-entry", self.imageTag)
+                    b.set_input_text(".image-tag-entry input", self.imageTag)
 
                 return self
 
@@ -1177,7 +1173,9 @@ class TestApplication(testlib.MachineCase):
         b.wait(lambda: self.execute(auth, "docker ps --all | grep -e swamped-crate -e Exited"))
 
         b.wait_visible("#containers-containers")
-        self.waitContainerRow("swamped-crate")
+        container_sha = self.execute(auth, "docker inspect --format '{{.Id}}' swamped-crate").strip()
+        self.waitContainer(container_sha, auth, name='swamped-crate', image=IMG_BUSYBOX,
+                           state='Exited', owner="system" if auth else "admin")
         b.click("#containers-containers tbody tr:contains('swamped-crate') .pf-v5-c-dropdown__toggle")
 
         if not auth:
@@ -1193,7 +1191,6 @@ class TestApplication(testlib.MachineCase):
         # Start the container
         self.performContainerAction(IMG_BUSYBOX, "Start")
 
-        container_sha = self.execute(auth, "docker inspect --format '{{.Id}}' swamped-crate").strip()
         self.waitContainer(container_sha, auth, name='swamped-crate', image=IMG_BUSYBOX,
                            state='Running', owner="system" if auth else "admin")
 
@@ -1227,12 +1224,12 @@ class TestApplication(testlib.MachineCase):
             self.assertEqual(memory, "n/a")
 
         # Restart the container; there is no steady state change in the visible UI, so look for
-        # a changed data-pid attribute
-        old_pid = self.getPid("swamped-crate", auth=auth)
-        b.wait_in_text(f'#containers-containers tr[data-pid="{old_pid}"]', "swamped-crate")
+        # a changed data-started-at attribute
+        old_start = self.getStartTime("swamped-crate", auth=auth)
+        b.wait_in_text(f'#containers-containers tr[data-started-at="{old_start}"]', "swamped-crate")
         self.performContainerAction(IMG_BUSYBOX, "Force restart")
-        new_pid = self.waitPidChange("swamped-crate", old_pid, auth=auth)
-        b.wait_in_text(f'#containers-containers tr[data-pid="{new_pid}"]', "swamped-crate")
+        new_start = self.waitRestart("swamped-crate", old_start, auth=auth)
+        b.wait_in_text(f'#containers-containers tr[data-started-at="{new_start}"]', "swamped-crate")
         self.waitContainer(container_sha, auth, name='swamped-crate', image=IMG_BUSYBOX, state='Running')
 
         self.waitContainerRow(IMG_BUSYBOX)
@@ -1326,6 +1323,10 @@ class TestApplication(testlib.MachineCase):
         self.performContainerAction("swamped-crate", "Start")
         b.wait(lambda: self.getContainerAttr("swamped-crate", "State") in 'Running')
 
+        self.toggleExpandedContainer("swamped-crate")
+        b.wait_visible(".pf-m-expanded button:contains('Details')")
+        b.wait_not_present(f'#containers-containers tr:contains("{IMG_BUSYBOX}") dt:contains("Latest checkpoint")')
+
         # Checkpoint the container
         self.performContainerAction("swamped-crate", "Checkpoint")
         b.set_checked('.pf-v5-c-modal-box input#checkpoint-dialog-keep', True)
@@ -1337,6 +1338,10 @@ class TestApplication(testlib.MachineCase):
 
         if self.has_criu:
             b.wait(lambda: self.getContainerAttr("swamped-crate", "State") in NOT_RUNNING)
+            b.wait_in_text(
+                f'#containers-containers tr:contains("{IMG_BUSYBOX}") dt:contains("Latest checkpoint") + dd',
+                'today at'
+            )
         else:
             # expect proper error message
             b.wait_in_text(".pf-v5-c-alert.pf-m-danger", "Failed to checkpoint container swamped-crate")
@@ -1779,7 +1784,7 @@ class TestApplication(testlib.MachineCase):
 
         if auth:
             b.assert_pixels(".pf-v5-c-modal-box", "integration",
-                            ignore=["#run-image-dialog-volume-0 input.pf-v5-c-select__toggle-typeahead"],
+                            ignore=["#run-image-dialog-volume-0 .pf-v5-c-select__toggle-typeahead"],
                             skip_layouts=["rtl"])
 
         if self.has_selinux:
@@ -2293,7 +2298,7 @@ class TestApplication(testlib.MachineCase):
         b.set_input_text('#run-image-healthcheck-interval input', '325')
         b.set_input_text('#run-image-healthcheck-timeout input', '35')
         b.set_input_text('#run-image-healthcheck-start-period input', '5')
-        b.click('#run-image-healthcheck-retries button:nth-child(1)')
+        b.click('#run-image-healthcheck-retries .pf-v5-c-input-group__item:nth-child(1) button')
         b.wait_val("#run-image-healthcheck-retries input", 2)
         if auth:
             b.assert_pixels('.pf-v5-c-modal-box', "healthcheck-modal", skip_layouts=["rtl"])
@@ -2400,13 +2405,14 @@ class TestApplication(testlib.MachineCase):
     def testHealthcheckSystem(self):
         self._testHealthcheck(True)
 
-    @testlib.skipImage("Ubuntu-stable does not get health check run signals", "ubuntu-stable")
     def testHealthcheckUser(self):
         self._testHealthcheck(False)
 
-    @testlib.skipImage("docker-restart not available in debian/ubuntu", *DISTROS_WITHOUT_docker_USER_RESTART)
-    def testdockerRestartEnabledUser(self):
-        self._testdockerRestartEnabled(False)
+    # Ubuntu 2204 lacks user systemd units
+    # https://github.com/containers/docker/commit/9312d458b4254b48e331d1ae40cb2f6d0fec9bd0
+    @testlib.skipImage("docker-restart not available for user", "ubuntu-2204")
+    def testDockerRestartEnabledUser(self):
+        self._testDockerRestartEnabled(False)
 
     def testdockerRestartEnabledSystem(self):
         self._testdockerRestartEnabled(True)
@@ -2551,9 +2557,30 @@ class TestApplication(testlib.MachineCase):
 
         # the container name should be in the "Rename container" header
         b.wait_in_text("#pf-modal-part-1", container_name)
+        b.set_input_text("#rename-dialog-container-name", "")
+        b.wait_in_text("#commit-dialog-image-name-helper", "Container name is required")
+        b.set_input_text("#rename-dialog-container-name", "banana???")
+        b.wait_in_text("#commit-dialog-image-name-helper", "Name can only contain letters, numbers")
 
         b.set_input_text("#rename-dialog-container-name", container_name_new)
         b.click('#btn-rename-dialog-container')
+        b.wait_not_present("#rename-dialog-container-name")
+
+        self.execute(auth, f"docker inspect --format '{{{{.Id}}}}' {container_name_new}").strip()
+        self.waitContainerRow(container_name_new)
+
+        # rename using the enter key
+        self.toggleExpandedContainer(container_name_new)
+        self.performContainerAction(container_name_new, "Rename")
+
+        container_name_new = "rename-new-enter"
+        b.set_input_text("#rename-dialog-container-name", "")
+        b.focus("#rename-dialog-container-name")
+        b.key_press("\r")  # Simulate enter key
+        b.wait_in_text("#commit-dialog-image-name-helper", "Container name is required")
+        b.set_input_text("#rename-dialog-container-name", container_name_new)
+        b.focus("#rename-dialog-container-name")
+        b.key_press("\r")  # Simulate enter key
         b.wait_not_present("#rename-dialog-container-name")
 
         self.execute(auth, f"docker inspect --format '{{{{.Id}}}}' {container_name_new}").strip()
@@ -2606,12 +2633,12 @@ class TestApplication(testlib.MachineCase):
     #     b.set_input_text('#create-pod-dialog-publish-2-ip-address', '127.0.0.2')
     #     b.set_input_text('#create-pod-dialog-publish-2-container-port', '9001')
 
-    #     # Volumes
-    #     if self.machine.image not in DISTROS_WITHOUT_docker_POD_VOLUMES:
-    #         b.click('.volume-form .btn-add')
-    #         rodir, rwdir = m.execute("mktemp; mktemp").split('\n')[:2]
-    #         m.execute(f"chown admin:admin {rodir}")
-    #         m.execute(f"chown admin:admin {rwdir}")
+        # Volumes
+        # if self.machine.image not in ["ubuntu-2204"]:
+        #     b.click('.volume-form .btn-add')
+        #     rodir, rwdir = m.execute("mktemp; mktemp").split('\n')[:2]
+        #     m.execute(f"chown admin:admin {rodir}")
+        #     m.execute(f"chown admin:admin {rwdir}")
 
     #         if self.has_selinux:
     #             b.set_val('#create-pod-dialog-volume-0-selinux', "z")
@@ -2638,7 +2665,7 @@ class TestApplication(testlib.MachineCase):
 
         # self.toggleExpandedContainer(container_name)
         # b.click(".pf-m-expanded button:contains('Integration')")
-        # if self.machine.image not in DISTROS_WITHOUT_DOCKER_POD_VOLUMES:
+        # if self.machine.image not in ["ubuntu-2204"]:
         #     b.wait_in_text('#containers-containers tr:contains("alpine") dt:contains("Volumes") + dd',
         #                    f"{rodir} \u2194 /tmp/ro")
         #     b.wait_in_text('#containers-containers tr:contains("alpine") dt:contains("Volumes") + dd',
@@ -2670,7 +2697,7 @@ class TestApplication(testlib.MachineCase):
     #         b.set_val("#containers-containers-filter", "all")
     #         self.waitPodContainer(pod_name, [])
 
-    @testlib.skipImage("passthrough log driver not supported", "ubuntu-*")
+    @testlib.skipImage("passthrough log driver not supported", "ubuntu-2204")
     def testLogErrors(self):
         b = self.browser
         container_name = "logissue"

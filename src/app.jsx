@@ -33,7 +33,7 @@ import ContainerHeader from './ContainerHeader.jsx';
 import Containers from './Containers.jsx';
 import Images from './Images.jsx';
 import * as client from './client.js';
-// import { th } from 'date-fns/locale/index.js';
+import { WithDockerInfo } from './util.js';
 
 const _ = cockpit.gettext;
 
@@ -50,7 +50,6 @@ class Application extends React.Component {
             containers: null,
             containersFilter: "all",
             containersStats: {},
-            containersDetails: {},
             userContainersLoaded: null,
             systemContainersLoaded: null,
             userPodsLoaded: null,
@@ -80,6 +79,8 @@ class Application extends React.Component {
         this.goToServicePage = this.goToServicePage.bind(this);
         this.checkUserService = this.checkUserService.bind(this);
         this.onNavigate = this.onNavigate.bind(this);
+
+        this.pendingUpdateContainer = {}; // id+system → promise
     }
 
     onAddNotification(notification) {
@@ -172,48 +173,22 @@ class Application extends React.Component {
         });
     }
 
-    inspectContainerDetail(id, system) {
-        client.inspectContainer(system, id)
-                .then(reply => {
-                    this.updateState("containersDetails", reply.Id, reply);
-                })
-                .catch(e => console.log(e));
-    }
-
-    isContainerCheckpointPresent(id, system) {
-        return client.inspectContainer(system, id)
-                .then(inspectResult => {
-                    const checkpointPath = inspectResult.StaticDir + "/checkpoint";
-                    return cockpit.script(`test -d ${checkpointPath}; echo $?`, [],
-                                          system ? { superuser: "require" } : {});
-                })
-                .then(scriptResult => scriptResult === "0\n");
-    }
-
     initContainers(system) {
         return client.getContainers(system)
-                .then(reply => Promise.all(
-                    (reply || []).map(container =>
-                        this.isContainerCheckpointPresent(container.Id, system)
-                                .then(checkpointPresent => {
-                                    const newContainer = Object.assign({}, container);
-                                    newContainer.hasCheckpoint = checkpointPresent;
-                                    return newContainer;
-                                })
-                    )
+                .then(containerList => Promise.all(
+                    containerList.map(container => client.inspectContainer(system, container.Id))
                 ))
-                .then(reply => {
+                .then(containerDetails => {
                     this.setState(prevState => {
-                        // Copy only containers that could not be deleted with this event
-                        // So when event from system come, only copy user containers and vice versa
+                        // keep/copy the containers for !system
                         const copyContainers = {};
                         Object.entries(prevState.containers || {}).forEach(([id, container]) => {
                             if (container.isSystem !== system)
                                 copyContainers[id] = container;
                         });
-                        for (const container of reply) {
-                            container.isSystem = system;
-                            copyContainers[container.Id] = container;
+                        for (const detail of containerDetails) {
+                            detail.isSystem = system;
+                            copyContainers[detail.Id] = detail;
                         }
 
                         return {
@@ -222,9 +197,6 @@ class Application extends React.Component {
                         };
                     });
                     this.updateContainerStats(system);
-                    for (const container of reply) {
-                        this.inspectContainerDetail(container.Id, system);
-                    }
                 })
                 .catch(console.log);
     }
@@ -283,41 +255,25 @@ class Application extends React.Component {
     // }
 
     updateContainer(id, system, event) {
-        return client.getContainers(system, id)
-                .then(reply => Promise.all(
-                    (reply || []).map(container =>
-                        this.isContainerCheckpointPresent(container.Id, system)
-                                .then(checkpointPresent => {
-                                    const newContainer = Object.assign({}, container);
-                                    newContainer.hasCheckpoint = checkpointPresent;
-                                    return newContainer;
-                                })
-                    )
-                ))
-                .then(reply => {
-                    if (reply && reply.length > 0) {
-                        reply = reply[0];
+        /* when firing off multiple calls in parallel, docker can return them in a random order.
+         * This messes up the state. So we need to serialize them for a particular container. */
+        const idx = id;
+        const wait = this.pendingUpdateContainer[idx] ?? Promise.resolve();
 
-                        reply.isSystem = system;
-                        // HACK: during restart State never changes from "running"
-                        //       override it to reconnect console after restart
-                        if (event && event.Action === "restart")
-                            reply.State = "restarting";
-                        this.updateState("containers", reply.Id, reply);
-                        if (["running", "created", "exited", "paused", "stopped"].find(containerState => containerState === reply.State)) {
-                            this.inspectContainerDetail(reply.Id, system);
-                        } else {
-                            this.setState(prevState => {
-                                const copyDetails = Object.assign({}, prevState.containersDetails);
-                                const copyStats = Object.assign({}, prevState.containersStats);
-                                delete copyDetails[reply.Id];
-                                delete copyStats[reply.Id];
-                                return { containersDetails: copyDetails, containersStats: copyStats };
-                            });
-                        }
-                    }
+        const new_wait = wait.then(() => client.inspectContainer(system, id))
+                .then(details => {
+                    details.isSystem = system;
+                    // HACK: during restart State never changes from "running"
+                    //       override it to reconnect console after restart
+                    if (event?.Action === "restart")
+                        details.State.Status = "restarting";
+                    this.updateState("containers", idx, details);
                 })
                 .catch(console.log);
+        this.pendingUpdateContainer[idx] = new_wait;
+        new_wait.finally(() => { delete this.pendingUpdateContainer[idx] });
+
+        return new_wait;
     }
 
     updateImage(id, system) {
@@ -381,6 +337,13 @@ class Application extends React.Component {
         case 'import':
         case 'resize':
         case 'init':
+        case 'health_status': // HACK: broken, https://github.com/containers/podman/issues/19237; see exec_died
+        case 'kill':
+        case 'mount':
+        case 'prune':
+        case 'restart':
+        case 'sync':
+        case 'unmount':
         case 'wait':
             break;
         /* The following events need only to update the Container list
@@ -392,22 +355,16 @@ class Application extends React.Component {
             this.updateContainer(id, system, event);
             break;
         case 'checkpoint':
+        case 'cleanup':
         case 'exec_create':
         case 'create':
         case 'died':
         case 'die':
         case 'exec_die':
-        case 'exec_died':
-        case 'kill':
-        case 'cleanup':
-        case 'mount':
+        case 'exec_died': // HACK: pick up health check runs, see https://github.com/containers/podman/issues/19237
         case 'pause':
-        case 'prune':
-        case 'restart':
         case 'restore':
         case 'stop':
-        case 'sync':
-        case 'unmount':
         case 'unpause':
         case 'rename': // rename event is available starting podman v4.1; until then the container does not get refreshed after renaming
             this.updateContainer(id, system, event);
@@ -730,12 +687,6 @@ class Application extends React.Component {
                 user={this.state.currentUser}
                 userServiceAvailable={this.state.userServiceAvailable}
                 systemServiceAvailable={this.state.systemServiceAvailable}
-                registries={this.state.registries}
-                selinuxAvailable={this.state.selinuxAvailable}
-                dockerRestartAvailable={this.state.dockerRestartAvailable}
-                userDockerRestartAvailable={this.state.userDockerRestartAvailable}
-                userLingeringEnabled={this.state.userLingeringEnabled}
-                version={this.state.version}
             />
         );
         const containerList = (
@@ -746,7 +697,6 @@ class Application extends React.Component {
                 containers={this.state.systemContainersLoaded && this.state.userContainersLoaded ? this.state.containers : null}
                 pods={this.state.systemPodsLoaded && this.state.userPodsLoaded ? this.state.pods : null}
                 containersStats={this.state.containersStats}
-                containersDetails={this.state.containersDetails}
                 filter={this.state.containersFilter}
                 handleFilterChange={this.onContainerFilterChanged}
                 textFilter={this.state.textFilter}
@@ -756,11 +706,6 @@ class Application extends React.Component {
                 userServiceAvailable={this.state.userServiceAvailable}
                 systemServiceAvailable={this.state.systemServiceAvailable}
                 cgroupVersion={this.state.cgroupVersion}
-                registries={this.state.registries}
-                selinuxAvailable={this.state.selinuxAvailable}
-                dockerRestartAvailable={this.state.dockerRestartAvailable}
-                userDockerRestartAvailable={this.state.userDockerRestartAvailable}
-                userLingeringEnabled={this.state.userLingeringEnabled}
                 updateContainer={this.updateContainer}
             />
         );
@@ -779,30 +724,42 @@ class Application extends React.Component {
             </AlertGroup>
         );
 
+        const contextInfo = {
+            cgroupVersion: this.state.cgroupVersion,
+            registries: this.state.registries,
+            selinuxAvailable: this.state.selinuxAvailable,
+            dockerRestartAvailable: this.state.dockerRestartAvailable,
+            userDockerRestartAvailable: this.state.userDockerRestartAvailable,
+            userLingeringEnabled: this.state.userLingeringEnabled,
+            version: this.state.version,
+        };
+
         return (
-            <WithDialogs>
-                <Page id="overview" key="overview">
-                    {notificationList}
-                    <PageSection className="content-filter" padding={{ default: 'noPadding' }}
-                                 variant={PageSectionVariants.light}>
-                        <ContainerHeader
-                            handleFilterChanged={this.onFilterChanged}
-                            handleOwnerChanged={this.onOwnerChanged}
-                            ownerFilter={this.state.ownerFilter}
-                            textFilter={this.state.textFilter}
-                            twoOwners={this.state.systemServiceAvailable && this.state.userServiceAvailable}
-                            user={this.state.currentUser}
-                        />
-                    </PageSection>
-                    <PageSection className='ct-pagesection-mobile'>
-                        <Stack hasGutter>
-                            { this.state.showStartService ? startService : null }
-                            {imageList}
-                            {containerList}
-                        </Stack>
-                    </PageSection>
-                </Page>
-            </WithDialogs>
+            <WithDockerInfo value={contextInfo}>
+                <WithDialogs>
+                    <Page id="overview" key="overview">
+                        {notificationList}
+                        <PageSection className="content-filter" padding={{ default: 'noPadding' }}
+                          variant={PageSectionVariants.light}>
+                            <ContainerHeader
+                              handleFilterChanged={this.onFilterChanged}
+                              handleOwnerChanged={this.onOwnerChanged}
+                              ownerFilter={this.state.ownerFilter}
+                              textFilter={this.state.textFilter}
+                              twoOwners={this.state.systemServiceAvailable && this.state.userServiceAvailable}
+                              user={this.state.currentUser}
+                            />
+                        </PageSection>
+                        <PageSection className='ct-pagesection-mobile'>
+                            <Stack hasGutter>
+                                { this.state.showStartService ? startService : null }
+                                {imageList}
+                                {containerList}
+                            </Stack>
+                        </PageSection>
+                    </Page>
+                </WithDialogs>
+            </WithDockerInfo>
         );
     }
 }

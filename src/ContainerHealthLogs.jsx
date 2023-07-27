@@ -78,17 +78,10 @@ const HealthLogBlock = ({ log }) => {
     );
 };
 
-const ContainerHealthLogs = ({ container, containerDetail, onAddNotification, state }) => {
-    let healthCheck = {};
-    let failingStreak = 0;
-    let logs = [];
-    if (containerDetail) {
-        healthCheck = containerDetail.Config.Healthcheck || containerDetail.Config.Health;
-        healthCheck.HealthcheckOnFailureAction = containerDetail.Config.HealthcheckOnFailureAction;
-        const healthState = containerDetail.State.Healthcheck || containerDetail.State.Health;
-        failingStreak = healthState.FailingStreak || 0;
-        logs = [...(healthState.Log || [])].reverse();
-    }
+const ContainerHealthLogs = ({ container, onAddNotification, state }) => {
+    const healthCheck = container.Config?.Healthcheck ?? container.Config?.Health ?? {}; // not-covered: only on old version
+    const healthState = container.State?.Healthcheck ?? container.State?.Health ?? {}; // not-covered: only on old version
+    const logs = [...(healthState.Log || [])].reverse(); // not-covered: Log should always exist, belt-and-suspenders
 
     return (
         <>
@@ -119,18 +112,19 @@ const ContainerHealthLogs = ({ container, containerDetail, onAddNotification, st
                             <DescriptionListTerm>{_("Timeout")}</DescriptionListTerm>
                             <DescriptionListDescription>{format_nanoseconds(healthCheck.Timeout)}</DescriptionListDescription>
                         </DescriptionListGroup>}
-                        {healthCheck.HealthcheckOnFailureAction && <DescriptionListGroup>
+                        {container.Config?.HealthcheckOnFailureAction && <DescriptionListGroup>
                             <DescriptionListTerm>{_("When unhealthy")}</DescriptionListTerm>
-                            <DescriptionListDescription>{HealthcheckOnFailureActionText[healthCheck.HealthcheckOnFailureAction]}</DescriptionListDescription>
+                            <DescriptionListDescription>{HealthcheckOnFailureActionText[container.Config.HealthcheckOnFailureAction]}</DescriptionListDescription>
                         </DescriptionListGroup>}
-                        {failingStreak !== 0 && <DescriptionListGroup>
+                        {healthState.FailingStreak && <DescriptionListGroup>
                             <DescriptionListTerm>{_("Failing streak")}</DescriptionListTerm>
-                            <DescriptionListDescription>{failingStreak}</DescriptionListDescription>
+                            <DescriptionListDescription>{healthState.FailingStreak}</DescriptionListDescription>
                         </DescriptionListGroup>}
                     </DescriptionList>
                 </FlexItem>
             </Flex>
             <ListingTable aria-label={_("Logs")}
+                          className="health-logs"
                           variant='compact'
                           columns={[_("Last 5 runs"), _("Exit Code"), _("Started at")]}
                           rows={

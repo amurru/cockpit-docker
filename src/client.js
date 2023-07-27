@@ -52,13 +52,7 @@ export function getInfo(system) {
     });
 }
 
-export function getContainers(system, id) {
-    const options = { all: true };
-    if (id)
-        options.filters = JSON.stringify({ id: [id] });
-
-    return dockerJson("/containers/json", "GET", options, system);
-}
+export const getContainers = system => dockerJson("/containers/json", "GET", { all: true }, system);
 
 export const streamContainerStats = (system, id, callback) => dockerMonitor("/containers/" + id + "/stats", "GET", { stream: true }, callback, system);
 

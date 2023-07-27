@@ -71,8 +71,8 @@ const PruneUnusedContainersModal = ({ close, unusedContainers, onAddNotification
     const selectAllContainers = isSelecting => setSelectedContainerIds(isSelecting ? unusedContainers.map(c => c.id) : []);
     const isContainerSelected = container => selectedContainerIds.includes(container.id);
     const setContainerSelected = (container, isSelecting) => setSelectedContainerIds(prevSelected => {
-        const otherSelectedContainerNames = prevSelected.filter(r => r !== container.id);
-        return isSelecting ? [...otherSelectedContainerNames, container.id] : otherSelectedContainerNames;
+        const otherSelectedContainerName = prevSelected.filter(r => r !== container.id);
+        return isSelecting ? [...otherSelectedContainerName, container.id] : otherSelectedContainerName;
     });
 
     const onSelectContainer = (id, _rowIndex, isSelecting) => {
