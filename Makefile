@@ -39,7 +39,7 @@ COCKPIT_REPO_FILES = \
 	$(NULL)
 
 COCKPIT_REPO_URL = https://github.com/cockpit-project/cockpit.git
-COCKPIT_REPO_COMMIT = 5ab26075bf5f8c9c3753e4887d31590dd9d9781f # 296 + PF update
+COCKPIT_REPO_COMMIT = fabdc84bd6bb06454f7b472b523cea06d806cefc # 297 + PF5 final adjustments
 
 $(COCKPIT_REPO_FILES): $(COCKPIT_REPO_STAMP)
 COCKPIT_REPO_TREE = '$(strip $(COCKPIT_REPO_COMMIT))^{tree}'
@@ -95,7 +95,7 @@ $(DIST_TEST): $(COCKPIT_REPO_STAMP) $(shell find src/ -type f) package.json buil
 	$(MAKE) package-lock.json && NODE_ENV=$(NODE_ENV) ./build.js
 
 watch: $(NODE_MODULES_TEST)
-	NODE_ENV=$(NODE_ENV) ESBUILD_WATCH=true ./build.js
+	NODE_ENV=$(NODE_ENV) ./build.js -w
 
 clean:
 	rm -rf dist/

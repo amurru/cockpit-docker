@@ -389,7 +389,7 @@ class Containers extends React.Component {
             <div className="container-block">
                 <span className="container-name">{container.Name}</span>
                 <small>{image.includes("sha256:") ? utils.truncate_id(image) : image}</small>
-                <small>{utils.quote_cmdline(container.Command)}</small>
+                <small>{utils.quote_cmdline(container.Config?.Cmd)}</small>
             </div>
         );
 
