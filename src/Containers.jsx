@@ -23,8 +23,6 @@ import ContainerTerminal from './ContainerTerminal.jsx';
 import ContainerLogs from './ContainerLogs.jsx';
 import ContainerHealthLogs from './ContainerHealthLogs.jsx';
 import ContainerDeleteModal from './ContainerDeleteModal.jsx';
-import ContainerCheckpointModal from './ContainerCheckpointModal.jsx';
-import ContainerRestoreModal from './ContainerRestoreModal.jsx';
 import ForceRemoveModal from './ForceRemoveModal.jsx';
 import * as utils from './util.js';
 import * as client from './client.js';
@@ -160,20 +158,6 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
         }
     };
 
-    const checkpointContainer = () => {
-        setActionsKebabOpen(false);
-
-        Dialogs.show(<ContainerCheckpointModal containerWillCheckpoint={container}
-                                               onAddNotification={onAddNotification} />);
-    };
-
-    const restoreContainer = () => {
-        setActionsKebabOpen(false);
-
-        Dialogs.show(<ContainerRestoreModal containerWillRestore={container}
-                                            onAddNotification={onAddNotification} />);
-    };
-
     const addRenameAction = () => {
         actions.push(
             <DropdownItem key="rename"
@@ -219,16 +203,6 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
                 </DropdownItem>
             );
         }
-
-        if (!isPaused) {
-            actions.push(
-                <DropdownSeparator key="separator-0" />,
-                <DropdownItem key="checkpoint"
-                              onClick={() => checkpointContainer()}>
-                    {_("Checkpoint")}
-                </DropdownItem>
-            );
-        }
     }
 
     if (!isRunning && !isPaused) {
@@ -238,25 +212,17 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
                 {_("Start")}
             </DropdownItem>
         );
+        actions.push(<DropdownSeparator key="separator-1" />);
         if (version.localeCompare("3", undefined, { numeric: true, sensitivity: 'base' }) >= 0) {
             addRenameAction();
         }
-        if (container.State?.CheckpointPath) {
-            actions.push(
-                <DropdownSeparator key="separator-0" />,
-                <DropdownItem key="restore"
-                              onClick={() => restoreContainer()}>
-                    {_("Restore")}
-                </DropdownItem>
-            );
-        }
     } else { // running or paused
+        actions.push(<DropdownSeparator key="separator-1" />);
         if (version.localeCompare("3.0.1", undefined, { numeric: true, sensitivity: 'base' }) >= 0) {
             addRenameAction();
         }
     }
 
-    actions.push(<DropdownSeparator key="separator-1" />);
     actions.push(
         <DropdownItem key="commit"
                       onClick={() => commitContainer()}>
