@@ -20,6 +20,8 @@ DIST_TEST=dist/manifest.json
 COCKPIT_REPO_STAMP=pkg/lib/cockpit-po-plugin.js
 # common arguments for tar, mostly to make the generated tarballs reproducible
 TAR_ARGS = --sort=name --mtime "@$(shell git show --no-patch --format='%at')" --mode=go=rX,u+rw,a-s --numeric-owner --owner=0 --group=0
+# default customize_flags
+VM_CUSTOMIZE_FLAGS = --no-network
 
 ifeq ($(TEST_COVERAGE),yes)
 RUN_TESTS_OPTIONS+=--coverage
@@ -39,7 +41,7 @@ COCKPIT_REPO_FILES = \
 	$(NULL)
 
 COCKPIT_REPO_URL = https://github.com/cockpit-project/cockpit.git
-COCKPIT_REPO_COMMIT = 9a2a4d94269561ad6fce5501eece6d84ae085476 # 299 + 41 commits
+COCKPIT_REPO_COMMIT = 118d89a84afdccda8d799579b68fee2808d96a30 # 303 + 38 commits
 
 $(COCKPIT_REPO_FILES): $(COCKPIT_REPO_STAMP)
 COCKPIT_REPO_TREE = '$(strip $(COCKPIT_REPO_COMMIT))^{tree}'
@@ -152,27 +154,23 @@ rpm: $(TARFILE)
 	find tmp/rpmbuild -name '*.rpm' -printf '%f\n' -exec mv {} . \;
 	rm -r tmp/rpmbuild
 
-# pybridge scenario: build and install the python bridge from cockpit repo
-ifeq ("$(TEST_SCENARIO)","pybridge")
-COCKPIT_PYBRIDGE_REF = main
-COCKPIT_WHEEL = cockpit-0-py3-none-any.whl
+ifeq ("$(TEST_SCENARIO)","updates-testing")
+VM_CUSTOMIZE_FLAGS = --run-command 'dnf -y update --setopt=install_weak_deps=False --enablerepo=updates-testing >&2'
+endif
 
-$(COCKPIT_WHEEL):
-	pip wheel git+https://github.com/cockpit-project/cockpit.git@${COCKPIT_PYBRIDGE_REF}
-
-VM_DEPENDS = $(COCKPIT_WHEEL)
-VM_CUSTOMIZE_FLAGS = --install $(COCKPIT_WHEEL)
+ifeq ("$(TEST_SCENARIO)","podman-next")
+VM_CUSTOMIZE_FLAGS = --run-command 'dnf -y copr enable rhcontainerbot/podman-next >&2; dnf -y update >&2'
 endif
 
 # build a VM with locally built distro pkgs installed
-$(VM_IMAGE): $(TARFILE) packaging/debian/rules packaging/debian/control packaging/arch/PKGBUILD bots $(VM_DEPENDS)
+$(VM_IMAGE): $(TARFILE) packaging/debian/rules packaging/debian/control packaging/arch/PKGBUILD bots
 	# HACK for ostree images: skip the rpm build/install
 	if [ "$$TEST_OS" = "fedora-coreos" ] || [ "$$TEST_OS" = "rhel4edge" ]; then \
 	    bots/image-customize --verbose --fresh --no-network --run-command 'mkdir -p /usr/local/share/cockpit' \
 	                         --upload dist/:/usr/local/share/cockpit/docker \
 	                         --script $(CURDIR)/test/vm.install $(TEST_OS); \
 	else \
-	    bots/image-customize --verbose --fresh --no-network $(VM_CUSTOMIZE_FLAGS) --build $(TARFILE) \
+	    bots/image-customize --verbose --fresh $(VM_CUSTOMIZE_FLAGS) --build $(TARFILE) \
 	                         --script $(CURDIR)/test/vm.install $(TEST_OS); \
 	fi
 

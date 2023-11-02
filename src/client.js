@@ -188,3 +188,5 @@ export const pruneUnusedImages = system => dockerJson("/images/prune", "POST", {
 export const imageHistory = (system, id) => dockerJson(`/images/${id}/history`, "GET", {}, system);
 
 export const imageExists = (system, id) => dockerCall("/images/" + id + "/json", "GET", {}, system);
+
+export const containerExists = (system, id) => dockerCall("/containers/" + id + "/json", "GET", {}, system);

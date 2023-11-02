@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from "@patternfly/react-core/dist/esm/components/Button";
 import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox";
 import { Form, FormGroup } from "@patternfly/react-core/dist/esm/components/Form";
+import { FormHelper } from "cockpit-components-form-helper.jsx";
 import { FormSelect, FormSelectOption } from "@patternfly/react-core/dist/esm/components/FormSelect";
 import { Grid, GridItem } from "@patternfly/react-core/dist/esm/layouts/Grid";
 import { Modal } from "@patternfly/react-core/dist/esm/components/Modal";
@@ -15,7 +16,7 @@ import { Text, TextContent, TextList, TextListItem, TextVariants } from "@patter
 import { ToggleGroup, ToggleGroupItem } from "@patternfly/react-core/dist/esm/components/ToggleGroup";
 import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex";
 import { Popover } from "@patternfly/react-core/dist/esm/components/Popover";
-import { OutlinedQuestionCircleIcon, TrashIcon } from '@patternfly/react-icons';
+import { OutlinedQuestionCircleIcon } from '@patternfly/react-icons';
 import * as dockerNames from 'docker-names';
 
 import { ErrorNotification } from './Notification.jsx';
@@ -24,9 +25,10 @@ import * as client from './client.js';
 import rest from './rest.js';
 import cockpit from 'cockpit';
 import { onDownloadContainer, onDownloadContainerFinished } from './Containers.jsx';
-import { PublishPort } from './PublishPort.jsx';
+import { PublishPort, validatePublishPort } from './PublishPort.jsx';
 import { DynamicListForm } from 'DynamicListForm.jsx';
-import { Volume } from './Volume.jsx';
+import { validateVolume, Volume } from './Volume.jsx';
+import { EnvVar, validateEnvVar } from './Env.jsx';
 
 import { debounce } from 'throttle-debounce';
 
@@ -58,55 +60,6 @@ const HealthCheckOnFailureActionOrder = [
     { value: 4, label: _("Stop") },
     { value: 2, label: _("Force stop") },
 ];
-
-const handleEnvValue = (key, value, idx, onChange, additem, itemCount, companionField) => {
-    // Allow the input of KEY=VALUE separated value pairs for bulk import only if the other
-    // field is not empty.
-    if (value.includes('=') && !companionField) {
-        const parts = value.trim().split(" ");
-        let index = idx;
-        for (const part of parts) {
-            const [envKey, ...envVar] = part.split('=');
-            if (!envKey || !envVar) {
-                continue;
-            }
-
-            if (index !== idx) {
-                additem();
-            }
-            onChange(index, 'envKey', envKey);
-            onChange(index, 'envValue', envVar.join('='));
-            index++;
-        }
-    } else {
-        onChange(idx, key, value);
-    }
-};
-
-const EnvVar = ({ id, item, onChange, idx, removeitem, additem, itemCount }) =>
-    (
-        <Grid hasGutter id={id}>
-            <FormGroup className="pf-m-6-col-on-md" label={_("Key")} fieldId={id + "-key-address"}>
-                <TextInput id={id + "-key"}
-                       value={item.envKey || ''}
-                       onChange={(_, value) => handleEnvValue('envKey', value, idx, onChange, additem, itemCount, item.envValue)} />
-            </FormGroup>
-            <FormGroup className="pf-m-6-col-on-md" label={_("Value")} fieldId={id + "-value-address"}>
-                <TextInput id={id + "-value"}
-                       value={item.envValue || ''}
-                       onChange={(_, value) => handleEnvValue('envValue', value, idx, onChange, additem, itemCount, item.envKey)} />
-            </FormGroup>
-            <FormGroup className="pf-m-1-col-on-md remove-button-group">
-                <Button variant='plain'
-                    className="btn-close"
-                    id={id + "-btn-close"}
-                    size="sm"
-                    aria-label={_("Remove item")}
-                    icon={<TrashIcon />}
-                    onClick={() => removeitem(idx)} />
-            </FormGroup>
-        </Grid>
-    );
 
 export class ImageRunModal extends React.Component {
     constructor(props) {
@@ -164,7 +117,6 @@ export class ImageRunModal extends React.Component {
             healthcheck_start_period: 0,
             healthcheck_retries: 3,
             healthcheck_action: 0,
-
         };
         this.getCreateConfig = this.getCreateConfig.bind(this);
         this.onValueChanged = this.onValueChanged.bind(this);
@@ -313,6 +265,9 @@ export class ImageRunModal extends React.Component {
     };
 
     async onCreateClicked(runImage = false) {
+        if (!await this.validateForm())
+            return;
+
         const Dialogs = this.props.dialogs;
         const createConfig = this.getCreateConfig();
         const { pullLatestImage } = this.state;
@@ -562,7 +517,8 @@ export class ImageRunModal extends React.Component {
             imageRegistries.push(this.state.searchByRegistry);
         }
 
-        let regexString = searchText;
+        // Strip out all non-allowed container image characters when filtering.
+        let regexString = searchText.replace(/[^\w_.:-]/g, "");
         // Strip image registry option if set for comparing results for docker.io searching for docker.io/fedora
         // returns docker.io/$username/fedora for example.
         if (regexString.includes('/')) {
@@ -638,6 +594,87 @@ export class ImageRunModal extends React.Component {
         return owner === systemOwner;
     };
 
+    isFormInvalid = validationFailed => {
+        const groupHasError = row => Object.values(row)
+                .filter(val => val) // Filter out empty/undefined properties
+                .length > 0; // If one field has error, the whole group (dynamicList) is invalid
+
+        // If at least one group is invalid, then the whole form is invalid
+        return validationFailed.publish?.some(groupHasError) ||
+            validationFailed.volumes?.some(groupHasError) ||
+            validationFailed.env?.some(groupHasError) ||
+            !!validationFailed.containerName;
+    };
+
+    async validateContainerName(containerName) {
+        try {
+            await client.containerExists(this.isSystem(), containerName);
+        } catch (error) {
+            return;
+        }
+        return _("Name already in use");
+    }
+
+    async validateForm() {
+        const { publish, volumes, env, containerName } = this.state;
+        const validationFailed = { };
+
+        const publishValidation = publish.map(a => {
+            return {
+                IP: validatePublishPort(a.IP, "IP"),
+                hostPort: validatePublishPort(a.hostPort, "hostPort"),
+                containerPort: validatePublishPort(a.containerPort, "containerPort"),
+            };
+        });
+        if (publishValidation.some(entry => Object.keys(entry).length > 0))
+            validationFailed.publish = publishValidation;
+
+        const volumesValidation = volumes.map(a => {
+            return {
+                hostPath: validateVolume(a.hostPath, "hostPath"),
+                containerPath: validateVolume(a.containerPath, "containerPath"),
+            };
+        });
+        if (volumesValidation.some(entry => Object.keys(entry).length > 0))
+            validationFailed.volumes = volumesValidation;
+
+        const envValidation = env.map(a => {
+            return {
+                envKey: validateEnvVar(a.envKey, "envKey"),
+                envValue: validateEnvVar(a.envValue, "envValue"),
+            };
+        });
+        if (envValidation.some(entry => Object.keys(entry).length > 0))
+            validationFailed.env = envValidation;
+
+        const containerNameValidation = await this.validateContainerName(containerName);
+
+        if (containerNameValidation)
+            validationFailed.containerName = containerNameValidation;
+
+        this.setState({ validationFailed });
+
+        return !this.isFormInvalid(validationFailed);
+    }
+
+    /* Updates a validation object of the whole dynamic list's form (e.g. the whole port-mapping form)
+    *
+    * Arguments
+    *   - key: [publish/volumes/env] - Specifies the validation of which dynamic form of the Image run dialog is being updated
+    *   - value: An array of validation errors of the form. Each item of the array represents a row of the dynamic list.
+    *            Index needs to corellate with a row number
+    */
+    dynamicListOnValidationChange = (value, key) => {
+        const validationFailedDelta = { ...this.state.validationFailed };
+
+        validationFailedDelta[key] = value;
+
+        if (validationFailedDelta[key].every(a => a === undefined))
+            delete validationFailedDelta[key];
+
+        this.onValueChanged('validationFailed', validationFailedDelta);
+    };
+
     render() {
         const Dialogs = this.props.dialogs;
         const { registries, dockerRestartAvailable, userLingeringEnabled, userDockerRestartAvailable, selinuxAvailable, version } = this.props.dockerInfo;
@@ -693,12 +730,22 @@ export class ImageRunModal extends React.Component {
         const defaultBody = (
             <Form>
                 {this.state.dialogError && <ErrorNotification errorMessage={this.state.dialogError} errorDetail={this.state.dialogErrorDetail} />}
-                <FormGroup fieldId='run-image-dialog-name' label={_("Name")} className="ct-m-horizontal">
+                <FormGroup id="image-name-group" fieldId='run-image-dialog-name' label={_("Name")} className="ct-m-horizontal">
                     <TextInput id='run-image-dialog-name'
                            className="image-name"
                            placeholder={_("Container name")}
+                           validated={dialogValues.validationFailed.containerName ? "error" : "default"}
                            value={dialogValues.containerName}
-                           onChange={(_, value) => this.onValueChanged('containerName', value)} />
+                           onChange={(_, value) => {
+                               utils.validationClear(dialogValues.validationFailed, "containerName", (value) => this.onValueChanged("validationFailed", value));
+                               utils.validationDebounce(async () => {
+                                   const delta = await this.validateContainerName(value);
+                                   if (delta)
+                                       this.onValueChanged("validationFailed", { ...dialogValues.validationFailed, containerName: delta });
+                               });
+                               this.onValueChanged('containerName', value);
+                           }} />
+                    <FormHelper helperTextInvalid={dialogValues.validationFailed.containerName} />
                 </FormGroup>
                 <Tabs activeKey={activeTabKey} onSelect={this.handleTabClick}>
                     <Tab eventKey={0} title={<TabTitleText>{_("Details")}</TabTitleText>} className="pf-v5-c-form pf-m-horizontal">
@@ -938,15 +985,18 @@ export class ImageRunModal extends React.Component {
                                  formclass='publish-port-form'
                                  label={_("Port mapping")}
                                  actionLabel={_("Add port mapping")}
+                                 validationFailed={dialogValues.validationFailed.publish}
+                                 onValidationChange={value => this.dynamicListOnValidationChange(value, "publish")}
                                  onChange={value => this.onValueChanged('publish', value)}
                                  default={{ IP: null, containerPort: null, hostPort: null, protocol: 'tcp' }}
                                  itemcomponent={ <PublishPort />} />
-
                         <DynamicListForm id='run-image-dialog-volume'
                                  emptyStateString={_("No volumes specified")}
                                  formclass='volume-form'
                                  label={_("Volumes")}
                                  actionLabel={_("Add volume")}
+                                 validationFailed={dialogValues.validationFailed.volumes}
+                                 onValidationChange={value => this.dynamicListOnValidationChange(value, "volumes")}
                                  onChange={value => this.onValueChanged('volumes', value)}
                                  default={{ containerPath: null, hostPath: null, readOnly: false }}
                                  options={{ selinuxAvailable }}
@@ -957,6 +1007,8 @@ export class ImageRunModal extends React.Component {
                                  formclass='env-form'
                                  label={_("Environment variables")}
                                  actionLabel={_("Add variable")}
+                                 validationFailed={dialogValues.validationFailed.env}
+                                 onValidationChange={value => this.dynamicListOnValidationChange(value, "env")}
                                  onChange={value => this.onValueChanged('env', value)}
                                  default={{ envKey: null, envValue: null }}
                                  helperText={_("Paste one or more lines of key=value pairs into any field for bulk import")}
@@ -1112,10 +1164,10 @@ export class ImageRunModal extends React.Component {
                    }}
                    title={this.props.pod ? cockpit.format(_("Create container in $0"), this.props.pod.Name) : _("Create container")}
                    footer={<>
-                       <Button variant='primary' id="create-image-create-run-btn" onClick={() => this.onCreateClicked(true)} isDisabled={!image && selectedImage === ""}>
+                       <Button variant='primary' id="create-image-create-run-btn" onClick={() => this.onCreateClicked(true)} isDisabled={(!image && selectedImage === "") || this.isFormInvalid(dialogValues.validationFailed)}>
                            {_("Create and run")}
                        </Button>
-                       <Button variant='secondary' id="create-image-create-btn" onClick={() => this.onCreateClicked(false)} isDisabled={!image && selectedImage === ""}>
+                       <Button variant='secondary' id="create-image-create-btn" onClick={() => this.onCreateClicked(false)} isDisabled={(!image && selectedImage === "") || this.isFormInvalid(dialogValues.validationFailed)}>
                            {_("Create")}
                        </Button>
                        <Button variant='link' className='btn-cancel' onClick={Dialogs.close}>

@@ -33,7 +33,7 @@ const ContainerDetails = ({ container }) => {
                     </DescriptionListGroup>
                     <DescriptionListGroup>
                         <DescriptionListTerm>{_("Image")}</DescriptionListTerm>
-                        <DescriptionListDescription>{container.ImageName}</DescriptionListDescription>
+                        <DescriptionListDescription>{container.Config.Image}</DescriptionListDescription>
                     </DescriptionListGroup>
                     <DescriptionListGroup>
                         <DescriptionListTerm>{_("Command")}</DescriptionListTerm>
@@ -61,7 +61,7 @@ const ContainerDetails = ({ container }) => {
                 <DescriptionList className='container-details-state'>
                     <DescriptionListGroup>
                         <DescriptionListTerm>{_("Created")}</DescriptionListTerm>
-                        <DescriptionListDescription>{utils.localize_time(container.Created / 1000)}</DescriptionListDescription>
+                        <DescriptionListDescription>{utils.localize_time(new Date(container.Created) / 1000)}</DescriptionListDescription>
                     </DescriptionListGroup>
                     <DescriptionListGroup>
                         <DescriptionListTerm>{_("State")}</DescriptionListTerm>

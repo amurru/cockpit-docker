@@ -13,7 +13,7 @@
 #containers-images, #containers-containers {
     // Decrease padding for the image/container toggle button list
     .pf-v5-c-table.pf-m-compact .pf-v5-c-table__toggle {
-        padding-left: 0;
+        padding-inline-start: 0;
     }
 }
 
@@ -41,7 +41,7 @@
 }
 
 .containers-run-onbuildvarclaim input {
-    max-width: 15em;
+    max-inline-size: 15em;
 }
 
 .pf-v5-c-alert__description {
@@ -49,7 +49,7 @@
 }
 
 .listing-action {
-    width: 100%;
+    inline-size: 100%;
     display: flex;
     justify-content: space-around;
 }
@@ -67,6 +67,26 @@
 .ct-badge-container-unhealthy {
   background-color: var(--pf-v5-global--danger-color--100);
   color: white;
+}
+
+.ct-badge-toolbox {
+    background-color: var(--pf-v5-global--palette--purple-100);
+    color: var(--pf-v5-global--palette--purple-600);
+
+    .pf-v5-theme-dark & {
+        background-color: var(--pf-v5-global--palette--purple-500);
+        color: white;
+    }
+}
+
+.ct-badge-distrobox {
+    background-color: var(--pf-v5-global--palette--gold-100);
+    color: var(--pf-v5-global--palette--gold-600);
+
+    .pf-v5-theme-dark & {
+        background-color: var(--pf-v5-global--palette--gold-500);
+        color: white;
+    }
 }
 
 .green {
@@ -87,7 +107,7 @@
 }
 
 .content-action {
-    text-align: right;
+    text-align: end;
     white-space: nowrap !important;
 }
 

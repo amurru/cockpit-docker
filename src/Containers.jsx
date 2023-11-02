@@ -364,7 +364,9 @@ class Containers extends React.Component {
 
     renderRow(containersStats, container, localImages) {
         const containerStats = containersStats[container.Id];
-        const image = container.Image;
+        const image = container.Config.Image;
+        const isToolboxContainer = container.Config?.Labels?.["com.github.containers.toolbox"] === "true";
+        const isDistroboxContainer = container.Config?.Labels?.manager === "distrobox";
         let localized_health = null;
 
         // this needs to get along with stub containers from image run dialog, where most properties don't exist yet
@@ -387,7 +389,11 @@ class Containers extends React.Component {
 
         const info_block = (
             <div className="container-block">
-                <span className="container-name">{container.Name}</span>
+                <Flex alignItems={{ default: 'alignItemsCenter' }}>
+                    <span className="container-name">{container.Name}</span>
+                    {isToolboxContainer && <Badge className='ct-badge-toolbox'>toolbox</Badge>}
+                    {isDistroboxContainer && <Badge className='ct-badge-distrobox'>distrobox</Badge>}
+                </Flex>
                 <small>{image.includes("sha256:") ? utils.truncate_id(image) : image}</small>
                 <small>{utils.quote_cmdline(container.Config?.Cmd)}</small>
             </div>
@@ -433,21 +439,24 @@ class Containers extends React.Component {
                 renderer: ContainerDetails,
                 data: { container }
             });
-            tabs.push({
-                name: _("Integration"),
-                renderer: ContainerIntegration,
-                data: { container, localImages }
-            });
-            tabs.push({
-                name: _("Logs"),
-                renderer: ContainerLogs,
-                data: { containerId: container.Id, containerStatus: container.State.Status, width: this.state.width, system: container.isSystem }
-            });
-            tabs.push({
-                name: _("Console"),
-                renderer: ContainerTerminal,
-                data: { containerId: container.Id, containerStatus: container.State.Status, width: this.state.width, system: container.isSystem, tty }
-            });
+
+            if (!container.isDownloading) {
+                tabs.push({
+                    name: _("Integration"),
+                    renderer: ContainerIntegration,
+                    data: { container, localImages }
+                });
+                tabs.push({
+                    name: _("Logs"),
+                    renderer: ContainerLogs,
+                    data: { containerId: container.Id, containerStatus: container.State.Status, width: this.state.width, system: container.isSystem }
+                });
+                tabs.push({
+                    name: _("Console"),
+                    renderer: ContainerTerminal,
+                    data: { containerId: container.Id, containerStatus: container.State.Status, width: this.state.width, system: container.isSystem, tty }
+                });
+            }
         }
 
         if (healthcheck) {
@@ -459,8 +468,7 @@ class Containers extends React.Component {
         }
 
         return {
-            expandedContent: <ListingPanel colSpan='4'
-                                           tabRenderers={tabs} />,
+            expandedContent: <ListingPanel colSpan='4' tabRenderers={tabs} />,
             columns,
             initiallyExpanded: document.location.hash.substr(1) === container.Id,
             props: {

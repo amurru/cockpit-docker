@@ -114,7 +114,7 @@ class Images extends React.Component {
                 imageStats.imagesSize += image.Size;
 
                 const usedBy = imageContainerList[image.Id];
-                if (usedBy === undefined) {
+                if (image.Containers === 0 || usedBy === undefined) {
                     imageStats.unusedTotal += 1;
                     imageStats.unusedSize += image.Size;
                     unusedImages.push(image);

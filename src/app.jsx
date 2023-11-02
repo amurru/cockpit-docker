@@ -337,7 +337,6 @@ class Application extends React.Component {
         case 'import':
         case 'resize':
         case 'init':
-        case 'health_status': // HACK: broken, https://github.com/containers/podman/issues/19237; see exec_died
         case 'kill':
         case 'mount':
         case 'prune':
@@ -361,7 +360,8 @@ class Application extends React.Component {
         case 'died':
         case 'die':
         case 'exec_die':
-        case 'exec_died': // HACK: pick up health check runs, see https://github.com/containers/podman/issues/19237
+        case 'exec_died': // HACK: pick up health check runs with older podman versions, see https://github.com/containers/podman/issues/19237
+        case 'health_status':
         case 'pause':
         case 'restore':
         case 'stop':
@@ -637,7 +637,7 @@ class Application extends React.Component {
         if (this.state.containers !== null) {
             Object.keys(this.state.containers).forEach(c => {
                 const container = this.state.containers[c];
-                const image = container.ImageID;
+                const image = container.Image;
                 if (imageContainerList[image]) {
                     imageContainerList[image].push({
                         container,

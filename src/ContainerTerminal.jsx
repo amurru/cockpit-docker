@@ -192,7 +192,7 @@ class ContainerTerminal extends React.Component {
                               "Content-Length: " + body.length + "\r\n\r\n" + body);
 
                     const buffer = this.setUpBuffer(channel);
-                    this.setState({ channel, errorMessage: "", buffer, sessionId: r.Id }, () => this.resize(this.props.width));
+                    this.setState({ channel, errorMessage: "", buffer, sessionId: r.Id }, () => { console.log(this.props.width); this.resize(this.props.width) });
                 })
                 .catch(e => this.setState({ errorMessage: e.message }));
     }
