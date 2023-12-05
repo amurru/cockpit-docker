@@ -796,13 +796,13 @@ class TestApplication(testlib.MachineCase):
 
         b.click(busybox_sel + " .pf-v5-c-dropdown__toggle")
         b.click(busybox_sel + " button.btn-delete")
-        b.click("button:contains('select all')")
+        b.click("#delete-all")
         self.assertTrue(b.get_checked(f".pf-v5-c-check__input[aria-label='{IMG_BUSYBOX_LATEST}']"))
         self.assertTrue(b.get_checked(f".pf-v5-c-check__input[aria-label='{IMG_BUSYBOX}:2']"))
         self.assertTrue(b.get_checked(f".pf-v5-c-check__input[aria-label='{IMG_BUSYBOX}:4']"))
         self.confirm_modal("Delete")
         self.confirm_modal("Force delete")
-        b.wait_not_in_text("#containers-images", busybox_sel)
+        b.wait_not_present(busybox_sel)
 
         # Check that we correctly show networking information
         # Rootless don't have this info
@@ -838,7 +838,7 @@ class TestApplication(testlib.MachineCase):
         b.click(alpine_sel + " button.btn-delete")
         self.confirm_modal("Delete")
         self.confirm_modal("Force delete")
-        b.wait_not_in_text("#containers-images", alpine_sel)
+        b.wait_not_present(alpine_sel)
 
         b.wait_collected_text("#containers-containers .container-name", expected_ws)
         self.execute(auth, f"docker run -d --name c --stop-timeout 0 {IMG_REGISTRY} sh")
@@ -875,6 +875,31 @@ class TestApplication(testlib.MachineCase):
         b.click("#create-image-image-select-typeahead")
         b.wait_visible(f".pf-v5-c-select__menu-item:contains('{IMG_REGISTRY}')")
         b.wait_not_present(".pf-v5-c-select__menu-item:contains('none')")
+        b.click(".pf-v5-c-modal-box .btn-cancel")
+        b.wait_not_present(".pf-v5-c-modal-box")
+
+        # Delete intermediate images
+        intermediate_image_sel = "#containers-images tbody:last-child:contains('<none>:<none>')"
+        b.click(".listing-action button:contains('Show intermediate images')")
+        b.click(intermediate_image_sel + " .pf-v5-c-dropdown__toggle")
+        b.click(intermediate_image_sel + " button.btn-delete")
+        self.confirm_modal("Delete")
+        b.wait_not_present(intermediate_image_sel)
+        # Delete intermediate image which is in use
+        tmpdir = self.execute(auth, "mktemp -d").strip()
+        self.execute(auth, f"echo 'FROM {IMG_REGISTRY}\nRUN ls' > {tmpdir}/Dockerfile")
+        IMG_INTERMEDIATE = 'localhost/test-intermediate'
+        self.execute(auth, f"podman build -t {IMG_INTERMEDIATE} {tmpdir}")
+        b.click(f'#containers-images tbody tr:contains("{IMG_INTERMEDIATE}") .ct-container-create')
+        b.wait_visible('div.pf-v5-c-modal-box header:contains("Create container")')
+        b.click("#create-image-create-btn")
+        self.execute(auth, f"podman untag {IMG_INTERMEDIATE}")
+        b.click(intermediate_image_sel + " .pf-v5-c-dropdown__toggle")
+        b.click(intermediate_image_sel + " button.btn-delete")
+        self.confirm_modal("Delete")
+        self.confirm_modal("Force delete")
+        b.wait_not_in_text("#containers-images", "<none>:<none>")
+        b.wait_not_in_text("#containers-containers", IMG_INTERMEDIATE)
 
     def testCommitUser(self):
         self._testCommit(False)
@@ -1014,13 +1039,15 @@ class TestApplication(testlib.MachineCase):
                          f"docker tag {IMG_BUSYBOX} localhost:6000/my-busybox; docker push localhost:6000/my-busybox")
             # Untag busybox image which duplicates the image we are about to download
             self.execute(True, f"docker rmi -f {IMG_BUSYBOX} localhost:5000/my-busybox localhost:6000/my-busybox")
+            self.execute(False, f"docker rmi -f {IMG_BUSYBOX}")
 
-        class DownloadImageDialog:
-            def __init__(self, imageName, imageTag=None, user="system"):
+        class DownloadImageDialog():
+            def __init__(self, test_obj, imageName, imageTag=None, user="system"):
                 self.imageName = imageName
                 self.imageTag = imageTag
                 self.user = user
                 self.imageSha = ""
+                self.assertTrue = test_obj.assertTrue
 
             def openDialog(self):
                 # Open get new image modal
@@ -1048,11 +1075,11 @@ class TestApplication(testlib.MachineCase):
                 b.click(f".pf-v5-c-data-list .image-name:contains({self.imageName})")
                 b.wait_visible("div.pf-v5-c-modal-box footer button:contains(Download):not([disabled])")
                 b.click("div.pf-v5-c-modal-box footer button:contains(Download)")
+                b.wait_not_present("div.pf-v5-c-modal-box")
 
                 return self
 
             def expectDownloadErrorForNonExistingTag(self):
-                b.wait_not_present('div.pf-v5-c-modal-box')
                 title = f"Danger alert:Failed to download image localhost:5000/{self.imageName}:{self.imageTag}"
                 b.wait_visible(f'h4.pf-v5-c-alert__title:contains("{title}")')
 
@@ -1060,6 +1087,8 @@ class TestApplication(testlib.MachineCase):
 
             def expectSearchErrorForNotExistingImage(self):
                 b.wait_visible(f".pf-v5-c-modal-box__body:contains(No results for {self.imageName})")
+                b.click(".pf-v5-c-modal-box button.btn-cancel")
+                b.wait_not_present(".pf-v5-c-modal-box__body")
 
                 return self
 
@@ -1096,9 +1125,16 @@ class TestApplication(testlib.MachineCase):
                 b.click(sel + " .pf-v5-c-dropdown__toggle")
                 b.click(sel + ' button.btn-delete')
 
-                b.set_checked(f".pf-v5-c-check__input[aria-label='localhost:5000/{self.imageName}{imageTagSuffix}']",
-                              True)
                 if another:
+                    b.click("#delete-all")
+                    sel = f".pf-v5-c-check__input[aria-label='localhost:5000/{self.imageName}{imageTagSuffix}']"
+                    self.assertTrue(b.get_checked(sel))
+                    self.assertTrue(b.get_checked(f".pf-v5-c-check__input[aria-label='{another}']"))
+                    b.click("#delete-all")
+                    b.wait_visible("#btn-img-delete:disabled")
+
+                    b.set_checked(
+                        f".pf-v5-c-check__input[aria-label='localhost:5000/{self.imageName}{imageTagSuffix}']", True)
                     b.set_checked(f".pf-v5-c-check__input[aria-label='{another}']", True)
 
                 # Confirm deletion in the delete dialog
@@ -1133,34 +1169,39 @@ class TestApplication(testlib.MachineCase):
         b.click(".pf-v5-c-modal-box button:contains('Cancel')")
         b.wait_not_present('div.pf-v5-c-modal-box')
 
-        dialog0 = DownloadImageDialog('my-busybox', user="system")
+        dialog0 = DownloadImageDialog(self, imageName='my-busybox', user="system")
         dialog0.openDialog() \
             .fillDialog() \
             .selectImageAndDownload() \
             .expectDownloadSuccess()
+        dialog0.deleteImage()
 
-        dialog1 = DownloadImageDialog('my-busybox', user="user")
+        dialog1 = DownloadImageDialog(self, imageName='my-busybox', user="user")
         dialog1.openDialog() \
             .fillDialog() \
             .selectImageAndDownload() \
             .expectDownloadSuccess()
-        dialog1.deleteImage(True, another=IMG_BUSYBOX_LATEST)
+        # test recognition/deletion of multiple image tags
+        second_tag = "localhost/copybox:latest"
+        self.execute(False, f"podman tag localhost:5000/my-busybox {second_tag}")
+        # expand details
+        b.click("#containers-images tr:contains('my-busybox') td.pf-v5-c-table__toggle button")
+        b.wait_in_text("#containers-images tbody.pf-m-expanded tr .image-details", second_tag)
+        dialog1.deleteImage(True, another=second_tag)
 
-        dialog0.deleteImage()
-
-        dialog = DownloadImageDialog('my-busybox', 'latest', user="system")
+        dialog = DownloadImageDialog(self, imageName='my-busybox', imageTag='latest', user="system")
         dialog.openDialog() \
               .fillDialog() \
               .selectImageAndDownload() \
               .expectDownloadSuccess() \
               .deleteImage()
 
-        dialog = DownloadImageDialog('foobar')
+        dialog = DownloadImageDialog(self, imageName='foobar')
         dialog.openDialog() \
               .fillDialog() \
               .expectSearchErrorForNotExistingImage()
 
-        dialog = DownloadImageDialog('my-busybox', 'foobar')
+        dialog = DownloadImageDialog(self, imageName='my-busybox', imageTag='foobar')
         dialog.openDialog() \
               .fillDialog() \
               .selectImageAndDownload() \
@@ -2689,8 +2730,20 @@ class TestApplication(testlib.MachineCase):
 
     #     self.login(auth)
 
-    #     b.click("#containers-containers-create-pod-btn")
-    #     b.set_input_text("#create-pod-dialog-name", pod_name)
+        # b.click("#containers-containers-create-pod-btn")
+        # b.set_input_text("#create-pod-dialog-name", "")
+        # b.wait_visible(".pf-v5-c-modal-box__footer #create-pod-create-btn:disabled")
+        # b.wait_in_text("#pod-name-group .pf-v5-c-helper-text__item-text", "Invalid characters")
+
+        # b.set_input_text("#create-pod-dialog-name", pod_name)
+        # b.wait_visible(".pf-v5-c-modal-box__footer #create-pod-create-btn:not(:disabled)")
+
+        # b.click('.publish-port-form .btn-add')
+        # b.set_input_text("#create-pod-dialog-publish-0-container-port-group input", "-1")
+        # b.click(".pf-v5-c-modal-box__footer #create-pod-create-btn")
+        # b.wait_in_text("#create-pod-dialog-publish-0-container-port-group .pf-v5-c-helper-text__item-text",
+        #                "1 to 65535")
+        # b.click("#create-pod-dialog-publish-0-btn-close")
 
     #     if auth:
     #         b.wait_visible("#create-pod-dialog-owner-system:checked")

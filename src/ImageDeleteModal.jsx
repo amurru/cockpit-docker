@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from "@patternfly/react-core/dist/esm/components/Button";
 import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox";
+import { List, ListItem } from '@patternfly/react-core/dist/esm/components/List';
 import { Modal } from "@patternfly/react-core/dist/esm/components/Modal";
 import { Stack, StackItem } from "@patternfly/react-core/dist/esm/layouts/Stack";
 import { useDialogs } from "dialogs.jsx";
@@ -22,7 +23,8 @@ function sortTags(a, b) {
 
 export const ImageDeleteModal = ({ imageWillDelete, onAddNotification }) => {
     const Dialogs = useDialogs();
-    const repoTags = imageWillDelete.RepoTags.length > 0 ? imageWillDelete.RepoTags : [];
+    const repoTags = imageWillDelete.RepoTags ? imageWillDelete.RepoTags : [];
+    const isIntermediateImage = repoTags.length === 0;
 
     const [tags, setTags] = useState(repoTags.sort(sortTags).reduce((acc, item, i) => {
         acc[item] = (i === 0);
@@ -37,13 +39,6 @@ export const ImageDeleteModal = ({ imageWillDelete, onAddNotification }) => {
             ...prevState,
             [item]: value,
         }));
-    };
-
-    const pickAll = () => {
-        setTags(prevState => Object.keys(prevState).reduce((acc, item, i) => {
-            acc[item] = true;
-            return acc;
-        }, {}));
     };
 
     const handleRemoveImage = (tags, all) => {
@@ -61,7 +56,7 @@ export const ImageDeleteModal = ({ imageWillDelete, onAddNotification }) => {
         if (all)
             client.delImage(imageWillDelete.isSystem, imageWillDelete.Id, false)
                     .catch(ex => {
-                        Dialogs.show(<ForceRemoveModal name={imageWillDelete.RepoTags[0]}
+                        Dialogs.show(<ForceRemoveModal name={isIntermediateImage ? _("intermediate image") : repoTags[0]}
                                                        handleForceRemove={handleForceRemoveImage}
                                                        reason={ex.message} />);
                     });
@@ -81,15 +76,24 @@ export const ImageDeleteModal = ({ imageWillDelete, onAddNotification }) => {
         }
     };
 
+    const imageName = repoTags[0]?.split(":")[0].split("/").at(-1) ?? _("intermediate");
+
+    let isAllSelected = null;
+    if (checkedTags.length === repoTags.length)
+        isAllSelected = true;
+    else if (checkedTags.length === 0)
+        isAllSelected = false;
+
     return (
         <Modal isOpen
                  position="top" variant="medium"
+                 titleIconVariant="warning"
                  onClose={Dialogs.close}
-                 title={cockpit.format(_("Delete $0"), repoTags ? repoTags[0] : "")}
+                 title={cockpit.format(_("Delete $0 image?"), imageName)}
                  footer={<>
-                     <Button id="btn-img-delete" variant="danger" isDisabled={checkedTags.length === 0}
+                     <Button id="btn-img-delete" variant="danger" isDisabled={!isIntermediateImage && checkedTags.length === 0}
                              onClick={() => handleRemoveImage(checkedTags, checkedTags.length === repoTags.length)}>
-                         {_("Delete tagged images")}
+                         {isIntermediateImage ? _("Delete image") : _("Delete tagged images")}
                      </Button>
                      <Button variant="link" onClick={Dialogs.close}>{_("Cancel")}</Button>
                  </>}
@@ -97,19 +101,21 @@ export const ImageDeleteModal = ({ imageWillDelete, onAddNotification }) => {
             <Stack hasGutter>
                 { repoTags.length > 1 && <StackItem>{_("Multiple tags exist for this image. Select the tagged images to delete.")}</StackItem> }
                 <StackItem isFilled>
-                    { repoTags.map(x => {
-                        return (
-                            <Checkbox isChecked={checkedTags.indexOf(x) > -1}
-                                        id={"delete-" + x}
-                                        aria-label={x}
-                                        key={x}
-                                        label={x}
-                                        onChange={(_event, checked) => onValueChanged(x, checked)} />
-                        );
-                    })}
+                    {repoTags.length > 1 && <Checkbox isChecked={isAllSelected} id='delete-all' label={_("All")} aria-label='All'
+                        onChange={(_event, checked) => repoTags.forEach(item => onValueChanged(item, checked))}
+                        body={
+                            repoTags.map(x => (
+                                <Checkbox isChecked={checkedTags.indexOf(x) > -1}
+                                            id={"delete-" + x}
+                                            aria-label={x}
+                                            key={x}
+                                            label={x}
+                                            onChange={(_event, checked) => onValueChanged(x, checked)} />
+                            ))
+                        } />}
+                    {repoTags.length === 1 && <List><ListItem>{repoTags[0]}</ListItem></List>}
                 </StackItem>
             </Stack>
-            { repoTags.length > 2 && <Button isDisabled={repoTags.length === checkedTags.length} variant="link" onClick={pickAll}>{_("select all")}</Button> }
         </Modal>
     );
 };
