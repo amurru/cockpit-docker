@@ -26,7 +26,7 @@ import rest from './rest.js';
 import cockpit from 'cockpit';
 import { onDownloadContainer, onDownloadContainerFinished } from './Containers.jsx';
 import { PublishPort, validatePublishPort } from './PublishPort.jsx';
-import { DynamicListForm } from 'DynamicListForm.jsx';
+import { DynamicListForm } from 'cockpit-components-dynamic-list.jsx';
 import { validateVolume, Volume } from './Volume.jsx';
 import { EnvVar, validateEnvVar } from './Env.jsx';
 
@@ -164,26 +164,31 @@ export class ImageRunModal extends React.Component {
             createConfig.HostConfig.CpuShares = parseInt(this.state.cpuShares);
 
         createConfig.terminal = this.state.hasTTY;
-        if (this.state.publish.length > 0) {
-            createConfig.HostConfig.PortBindings = {};
-            createConfig.ExposedPorts = {};
-            this.state.publish.forEach(item => {
-                createConfig.ExposedPorts[item.containerPort + "/" + item.protocol] = {};
+        if (this.state.publish.some(port => port !== undefined)) {
+            const PortBindings = {};
+            const ExposedPorts = {};
+            this.state.publish.filter(port => port?.containerPort).forEach(item => {
+                ExposedPorts[item.containerPort + "/" + item.protocol] = {};
                 const mapping = { HostPort: item.hostPort };
-                if (item.hostIp)
+                if (item.IP)
                     mapping.HostIp = item.hostIp;
-                createConfig.HostConfig.PortBindings[item.containerPort + "/" + item.protocol] = [mapping];
+                PortBindings[item.containerPort + "/" + item.protocol] = [mapping];
             });
-        }
 
-        if (this.state.env.length > 0) {
-            createConfig.Env = [];
-            this.state.env.forEach(item => { createConfig.Env.push(item.envKey + "=" + item.envValue) });
+            createConfig.HostConfig.PortBindings = PortBindings;
+            createConfig.ExposedPorts = ExposedPorts;
         }
-
-        if (this.state.volumes.length > 0) {
-            createConfig.HostConfig.Mounts = this.state.volumes
-                    .filter(volume => volume.hostPath && volume.containerPath)
+        if (this.state.env.some(item => item !== undefined)) {
+            const envs = [];
+            this.state.env.forEach(item => {
+                if (item !== undefined)
+                    envs.push(item.envKey + "=" + item.envValue);
+            });
+            createConfig.Env = envs;
+        }
+        if (this.state.volumes.some(volume => volume !== undefined)) {
+            createConfig.HostConfig.mounts = this.state.volumes
+                    .filter(volume => volume?.hostPath && volume?.containerPath)
                     .map(volume => {
                         return {
                             Source: volume.hostPath,
@@ -595,7 +600,7 @@ export class ImageRunModal extends React.Component {
     };
 
     isFormInvalid = validationFailed => {
-        const groupHasError = row => Object.values(row)
+        const groupHasError = row => row && Object.values(row)
                 .filter(val => val) // Filter out empty/undefined properties
                 .length > 0; // If one field has error, the whole group (dynamicList) is invalid
 
@@ -620,6 +625,9 @@ export class ImageRunModal extends React.Component {
         const validationFailed = { };
 
         const publishValidation = publish.map(a => {
+            if (a === undefined)
+                return undefined;
+
             return {
                 IP: validatePublishPort(a.IP, "IP"),
                 hostPort: validatePublishPort(a.hostPort, "hostPort"),
@@ -630,6 +638,9 @@ export class ImageRunModal extends React.Component {
             validationFailed.publish = publishValidation;
 
         const volumesValidation = volumes.map(a => {
+            if (a === undefined)
+                return undefined;
+
             return {
                 hostPath: validateVolume(a.hostPath, "hostPath"),
                 containerPath: validateVolume(a.containerPath, "containerPath"),
@@ -639,6 +650,9 @@ export class ImageRunModal extends React.Component {
             validationFailed.volumes = volumesValidation;
 
         const envValidation = env.map(a => {
+            if (a === undefined)
+                return undefined;
+
             return {
                 envKey: validateEnvVar(a.envKey, "envKey"),
                 envValue: validateEnvVar(a.envValue, "envValue"),
@@ -664,7 +678,7 @@ export class ImageRunModal extends React.Component {
     *   - value: An array of validation errors of the form. Each item of the array represents a row of the dynamic list.
     *            Index needs to corellate with a row number
     */
-    dynamicListOnValidationChange = (value, key) => {
+    dynamicListOnValidationChange = (key, value) => {
         const validationFailedDelta = { ...this.state.validationFailed };
 
         validationFailedDelta[key] = value;
@@ -986,7 +1000,7 @@ export class ImageRunModal extends React.Component {
                                  label={_("Port mapping")}
                                  actionLabel={_("Add port mapping")}
                                  validationFailed={dialogValues.validationFailed.publish}
-                                 onValidationChange={value => this.dynamicListOnValidationChange(value, "publish")}
+                                 onValidationChange={value => this.dynamicListOnValidationChange('publish', value)}
                                  onChange={value => this.onValueChanged('publish', value)}
                                  default={{ IP: null, containerPort: null, hostPort: null, protocol: 'tcp' }}
                                  itemcomponent={ <PublishPort />} />
@@ -996,7 +1010,7 @@ export class ImageRunModal extends React.Component {
                                  label={_("Volumes")}
                                  actionLabel={_("Add volume")}
                                  validationFailed={dialogValues.validationFailed.volumes}
-                                 onValidationChange={value => this.dynamicListOnValidationChange(value, "volumes")}
+                                 onValidationChange={value => this.dynamicListOnValidationChange('volumes', value)}
                                  onChange={value => this.onValueChanged('volumes', value)}
                                  default={{ containerPath: null, hostPath: null, readOnly: false }}
                                  options={{ selinuxAvailable }}
@@ -1008,7 +1022,7 @@ export class ImageRunModal extends React.Component {
                                  label={_("Environment variables")}
                                  actionLabel={_("Add variable")}
                                  validationFailed={dialogValues.validationFailed.env}
-                                 onValidationChange={value => this.dynamicListOnValidationChange(value, "env")}
+                                 onValidationChange={value => this.dynamicListOnValidationChange('env', value)}
                                  onChange={value => this.onValueChanged('env', value)}
                                  default={{ envKey: null, envValue: null }}
                                  helperText={_("Paste one or more lines of key=value pairs into any field for bulk import")}
