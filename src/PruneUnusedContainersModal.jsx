@@ -10,7 +10,7 @@ import * as utils from './util.js';
 
 const _ = cockpit.gettext;
 
-const getContainerRow = (container, userSystemServiceAvailable, user, selected) => {
+const getContainerRow = (container, selected) => {
     const columns = [
         {
             title: container.name,
@@ -22,21 +22,10 @@ const getContainerRow = (container, userSystemServiceAvailable, user, selected) 
             props: { width: 20, },
         },
     ];
-
-    if (userSystemServiceAvailable)
-        columns.push({
-            title: container.system ? _("system") : <div><span className="ct-grey-text">{_("user:")} </span>{user}</div>,
-            sortKey: container.system.toString(),
-            props: {
-                className: "ignore-pixels",
-                modifier: "nowrap"
-            }
-        });
-
     return { columns, selected, props: { key: container.id } };
 };
 
-const PruneUnusedContainersModal = ({ close, unusedContainers, onAddNotification, userSystemServiceAvailable, user }) => {
+const PruneUnusedContainersModal = ({ close, unusedContainers, onAddNotification }) => {
     const [isPruning, setPruning] = useState(false);
     const [selectedContainerIds, setSelectedContainerIds] = React.useState(unusedContainers.map(u => u.id));
 
@@ -64,9 +53,6 @@ const PruneUnusedContainersModal = ({ close, unusedContainers, onAddNotification
         { title: _("Name"), sortable: true },
         { title: _("Created"), sortable: true },
     ];
-
-    if (userSystemServiceAvailable)
-        columns.push({ title: _("Owner"), sortable: true });
 
     const selectAllContainers = isSelecting => setSelectedContainerIds(isSelecting ? unusedContainers.map(c => c.id) : []);
     const isContainerSelected = container => selectedContainerIds.includes(container.id);
@@ -101,7 +87,7 @@ const PruneUnusedContainersModal = ({ close, unusedContainers, onAddNotification
                           onSelect={(_event, isSelecting, rowIndex, rowData) => onSelectContainer(rowData.props.id, rowIndex, isSelecting)}
                           onHeaderSelect={(_event, isSelecting) => selectAllContainers(isSelecting)}
                           id="unused-container-list"
-                          rows={unusedContainers.map(container => getContainerRow(container, userSystemServiceAvailable, user, isContainerSelected(container))) }
+                          rows={unusedContainers.map(container => getContainerRow(container, isContainerSelected(container))) }
                           variant="compact" sortBy={{ index: 0, direction: SortByDirection.asc }} />
         </Modal>
     );

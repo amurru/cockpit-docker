@@ -21,13 +21,12 @@ import './ImageSearchModal.css';
 
 const _ = cockpit.gettext;
 
-export const ImageSearchModal = ({ downloadImage, user, userServiceAvailable, systemServiceAvailable }) => {
+export const ImageSearchModal = ({ downloadImage }) => {
     const [searchInProgress, setSearchInProgress] = useState(false);
     const [searchFinished, setSearchFinished] = useState(false);
     const [imageIdentifier, setImageIdentifier] = useState('');
     const [imageList, setImageList] = useState([]);
     const [imageTag, setImageTag] = useState("");
-    const [isSystem, setIsSystem] = useState(systemServiceAvailable);
     const [selectedRegistry, setSelectedRegistry] = useState("");
     const [selected, setSelected] = useState("");
     const [dialogError, setDialogError] = useState("");
@@ -46,7 +45,7 @@ export const ImageSearchModal = ({ downloadImage, user, userServiceAvailable, sy
     // can't use that so instead we pass the selected registry.
     const onSearchTriggered = (searchRegistry = "", forceSearch = false) => {
         // When search re-triggers close any existing active connection
-        activeConnection = rest.connect(client.getAddress(isSystem), isSystem);
+        activeConnection = rest.connect(client.getAddress());
         if (activeConnection)
             activeConnection.close();
         setSearchFinished(false);
@@ -115,13 +114,12 @@ export const ImageSearchModal = ({ downloadImage, user, userServiceAvailable, sy
         }
     };
 
-    const onToggleUser = ev => setIsSystem(ev.currentTarget.value === "system");
     const onDownloadClicked = () => {
         const selectedImageName = imageList[selected].name;
         if (activeConnection)
             activeConnection.close();
         Dialogs.close();
-        downloadImage(selectedImageName, imageTag, isSystem);
+        downloadImage(selectedImageName, imageTag);
     };
 
     const handleClose = () => {
@@ -156,11 +154,6 @@ export const ImageSearchModal = ({ downloadImage, user, userServiceAvailable, sy
         >
             <Form isHorizontal>
                 {dialogError && <ErrorNotification errorMessage={dialogError} errorDetail={dialogErrorDetail} />}
-                { userServiceAvailable && systemServiceAvailable &&
-                <FormGroup id="as-user" label={_("Owner")} isInline>
-                    <Radio name="user" value="system" id="system" onChange={onToggleUser} isChecked={isSystem} label={_("system")} />
-                    <Radio name="user" value="user" id="user" onChange={onToggleUser} isChecked={!isSystem} label={user} />
-                </FormGroup>}
                 <Flex spaceItems={{ default: 'inlineFlex', modifier: 'spaceItemsXl' }}>
                     <FormGroup fieldId="search-image-dialog-name" label={_("Search for")}>
                         <TextInput id='search-image-dialog-name'

@@ -17,12 +17,12 @@ function manage_error(reject, error, content) {
 // calls are async, so keep track of a call counter to associate a result with a call
 let call_id = 0;
 
-function connect(address, system) {
+function connect(address) {
     /* This doesn't create a channel until a request */
-    const http = cockpit.http(address, { superuser: system ? "require" : null });
+    const http = cockpit.http(address, { superuser: null });
     const connection = {};
 
-    connection.monitor = function(options, callback, system, return_raw) {
+    connection.monitor = function(options, callback, return_raw) {
         return new Promise((resolve, reject) => {
             let buffer = "";
 
@@ -36,7 +36,7 @@ function connect(address, system) {
                             buffer = chunks.pop();
 
                             chunks.forEach(chunk => {
-                                debug(system, "monitor", chunk);
+                                debug("monitor", chunk);
                                 callback(JSON.parse(chunk));
                             });
                         }
@@ -50,16 +50,16 @@ function connect(address, system) {
 
     connection.call = function (options) {
         const id = call_id++;
-        debug(system, `call ${id}:`, JSON.stringify(options));
+        debug(`call ${id}:`, JSON.stringify(options));
         return new Promise((resolve, reject) => {
             options = options || {};
             http.request(options)
                     .then(result => {
-                        debug(system, `call ${id} result:`, JSON.stringify(result));
+                        debug(`call ${id} result:`, JSON.stringify(result));
                         resolve(result);
                     })
                     .catch((error, content) => {
-                        debug(system, `call ${id} error:`, JSON.stringify(error), "content", JSON.stringify(content));
+                        debug(`call ${id} error:`, JSON.stringify(error), "content", JSON.stringify(content));
                         manage_error(reject, error, content);
                     });
         });
@@ -76,8 +76,8 @@ function connect(address, system) {
  * Connects to the docker service, performs a single call, and closes the
  * connection.
  */
-async function call (address, system, parameters) {
-    const connection = connect(address, system);
+async function call (address, parameters) {
+    const connection = connect(address);
     const result = await connection.call(parameters);
     connection.close();
     // if (parameters.method === "GET")

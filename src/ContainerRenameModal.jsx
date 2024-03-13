@@ -42,12 +42,12 @@ const ContainerRenameModal = ({ container, updateContainer }) => {
 
         setNameError(null);
         setDialogError(null);
-        client.renameContainer(container.isSystem, container.Id, { name })
+        client.renameContainer(container.Id, { name })
                 .then(() => {
                     Dialogs.close();
                     // HACK: This is a workaround for missing API rename event in docker versions less than 4.1.
                     if (version.localeCompare("4.1", undefined, { numeric: true, sensitivity: 'base' }) < 0) {
-                        updateContainer(container.Id, container.isSystem); // not-covered: only on old version
+                        updateContainer(container.Id); // not-covered: only on old version
                     }
                 })
                 .catch(ex => {

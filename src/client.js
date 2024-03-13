@@ -3,11 +3,11 @@ import rest from './rest.js';
 const DOCKER_SYSTEM_ADDRESS = "/var/run/docker.sock";
 export const VERSION = "/v1.43";
 
-export function getAddress(system) {
+export function getAddress() {
     return DOCKER_SYSTEM_ADDRESS;
 }
 
-function dockerCall(name, method, args, system, body) {
+function dockerCall(name, method, args, body) {
     const options = {
         method,
         path: VERSION + name,
@@ -20,13 +20,13 @@ function dockerCall(name, method, args, system, body) {
 
     // console.log("dockerCall", options);
 
-    return rest.call(getAddress(system), system, options);
+    return rest.call(getAddress(), options);
 }
 
-const dockerJson = (name, method, args, system, body) => dockerCall(name, method, args, system, body)
+const dockerJson = (name, method, args, body) => dockerCall(name, method, args, body)
         .then(reply => JSON.parse(reply));
 
-function dockerMonitor(name, method, args, callback, system) {
+function dockerMonitor(name, method, args, callback) {
     const options = {
         method,
         path: VERSION + name,
@@ -36,53 +36,42 @@ function dockerMonitor(name, method, args, callback, system) {
 
     // console.log("dockerMonitor", options);
 
-    const connection = rest.connect(getAddress(system), system);
-    return connection.monitor(options, callback, system);
+    const connection = rest.connect(getAddress());
+    return connection.monitor(options, callback);
 }
 
-export const streamEvents = (system, callback) => dockerMonitor("/events", "GET", {}, callback, system);
+export const streamEvents = (callback) => dockerMonitor("/events", "GET", {}, callback);
 
-export function getInfo(system) {
+export function getInfo() {
     return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("timeout")), 5000);
-        dockerJson("/info", "GET", {}, system)
+        const timeout = setTimeout(() => reject(new Error("timeout")), 15000);
+        dockerJson("/info", "GET", {})
                 .then(reply => resolve(reply))
                 .catch(reject)
                 .finally(() => clearTimeout(timeout));
     });
 }
 
-export const getContainers = system => dockerJson("/containers/json", "GET", { all: true }, system);
+export const getContainers = () => dockerJson("/containers/json", "GET", { all: true });
 
-export const streamContainerStats = (system, id, callback) => dockerMonitor("/containers/" + id + "/stats", "GET", { stream: true }, callback, system);
+export const streamContainerStats = (id, callback) => dockerMonitor("/containers/" + id + "/stats", "GET", { stream: true }, callback);
 
-export function inspectContainer(system, id) {
+export function inspectContainer(id) {
     const options = {
         size: false // set true to display filesystem usage
     };
-    return dockerJson("/containers/" + id + "/json", "GET", options, system);
+    return dockerJson("/containers/" + id + "/json", "GET", options);
 }
 
-export const delContainer = (system, id, force) => dockerCall("/containers/" + id, "DELETE", { force }, system);
+export const delContainer = (id, force) => dockerCall("/containers/" + id, "DELETE", { force });
 
-export const renameContainer = (system, id, config) => dockerCall("/containers/" + id + "/rename", "POST", config, system);
+export const renameContainer = (id, config) => dockerCall("/containers/" + id + "/rename", "POST", config);
 
-export const createContainer = (system, config) => dockerJson("/containers/create", "POST", {}, system, JSON.stringify(config));
+export const createContainer = (config) => dockerJson("/containers/create", "POST", {}, JSON.stringify(config));
 
-export const commitContainer = (system, commitData) => dockerCall("/commit", "POST", commitData, system);
+export const commitContainer = (commitData) => dockerCall("/commit", "POST", commitData);
 
-export const postContainer = (system, action, id, args) => dockerCall("/containers/" + id + "/" + action, "POST", args, system);
-
-export const runHealthcheck = (system, id) => dockerCall("/containers/" + id + "/healthcheck", "GET", {}, system);
-
-// export const postPod = (system, action, id, args) => dockerCall("/pods/" + id + "/" + action, "POST", args, system);
-export const postPod = (system, action, id, args) => new Promise((resolve, reject) => reject(new Error("not implemented")));
-
-// export const delPod = (system, id, force) => dockerCall("/pods/" + id, "DELETE", { force }, system);
-export const delPod = (system, id, force) => new Promise((resolve, reject) => reject(new Error("not implemented")));
-
-// export const createPod = (system, config) => dockerCall("/pods/create", "POST", {}, system, JSON.stringify(config));
-export const createPod = (system, config) => new Promise((resolve, reject) => reject(new Error("not implemented")));
+export const postContainer = (action, id, args) => dockerCall("/containers/" + id + "/" + action, "POST", args);
 
 export function execContainer(system, id) {
     const args = {
@@ -93,10 +82,10 @@ export function execContainer(system, id) {
         Cmd: ["/bin/sh"],
     };
 
-    return dockerJson("/containers/" + id + "/exec", "POST", {}, system, JSON.stringify(args));
+    return dockerJson("/containers/" + id + "/exec", "POST", {}, JSON.stringify(args));
 }
 
-export function resizeContainersTTY(system, id, exec, width, height) {
+export function resizeContainersTTY(id, exec, width, height) {
     const args = {
         h: height,
         w: width,
@@ -107,7 +96,7 @@ export function resizeContainersTTY(system, id, exec, width, height) {
         point = "exec/";
 
     console.log("resizeContainersTTY", point + id + "/resize", args);
-    return dockerCall("/" + point + id + "/resize", "POST", args, system);
+    return dockerCall("/" + point + id + "/resize", "POST", args);
 }
 
 function parseImageInfo(info) {
@@ -124,49 +113,40 @@ function parseImageInfo(info) {
     return image;
 }
 
-export function getImages(system, id) {
+export function getImages(id) {
     const options = {};
     if (id)
         options.filters = JSON.stringify({ id: [id] });
-    return dockerJson("/images/json", "GET", options, system)
+    return dockerJson("/images/json", "GET", options)
             .then(reply => {
                 const images = {};
                 const promises = [];
 
                 for (const image of reply) {
                     images[image.Id] = image;
-                    promises.push(dockerJson("/images/" + image.Id + "/json", "GET", {}, system));
+                    promises.push(dockerJson("/images/" + image.Id + "/json", "GET", {}));
                 }
 
                 return Promise.all(promises)
                         .then(replies => {
                             for (const info of replies) {
                                 images[info.Id] = Object.assign(images[info.Id], parseImageInfo(info));
-                                images[info.Id].isSystem = system;
                             }
                             return images;
                         });
             });
 }
 
-export function getPods(system, id) {
-    // const options = {};
-    // if (id)
-    //     options.filters = JSON.stringify({ id: [id] });
-    // return dockerJson("/pods/json", "GET", options, system);
-    return new Promise((resolve, reject) => reject(new Error("not implemented")));
-}
+export const delImage = (id, force) => dockerJson("/images/" + id, "DELETE", { force });
 
-export const delImage = (system, id, force) => dockerJson("/images/" + id, "DELETE", { force }, system);
+export const untagImage = (id, repo, tag) => dockerCall("/images/" + id + "/untag", "POST", { repo, tag });
 
-export const untagImage = (system, id, repo, tag) => dockerCall("/images/" + id + "/untag", "POST", { repo, tag }, system);
-
-export function pullImage(system, reference) {
+export function pullImage(reference) {
     return new Promise((resolve, reject) => {
         const options = {
             fromImage: reference,
         };
-        dockerCall("/images/create", "POST", options, system)
+        dockerCall("/images/create", "POST", options)
                 .then(r => {
                     // Need to check the last response if it contains error
                     const responses = r.trim().split("\n");
@@ -183,10 +163,10 @@ export function pullImage(system, reference) {
     });
 }
 
-export const pruneUnusedImages = system => dockerJson("/images/prune", "POST", {}, system);
+export const pruneUnusedImages = () => dockerJson("/images/prune", "POST", {});
 
-export const imageHistory = (system, id) => dockerJson(`/images/${id}/history`, "GET", {}, system);
+export const imageHistory = (id) => dockerJson(`/images/${id}/history`, "GET", {});
 
-export const imageExists = (system, id) => dockerCall("/images/" + id + "/json", "GET", {}, system);
+export const imageExists = (id) => dockerCall("/images/" + id + "/json", "GET", {});
 
-export const containerExists = (system, id) => dockerCall("/containers/" + id + "/json", "GET", {}, system);
+export const containerExists = (id) => dockerCall("/containers/" + id + "/json", "GET", {});
