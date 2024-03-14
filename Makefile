@@ -20,8 +20,21 @@ DIST_TEST=dist/manifest.json
 COCKPIT_REPO_STAMP=pkg/lib/cockpit-po-plugin.js
 # common arguments for tar, mostly to make the generated tarballs reproducible
 TAR_ARGS = --sort=name --mtime "@$(shell git show --no-patch --format='%at')" --mode=go=rX,u+rw,a-s --numeric-owner --owner=0 --group=0
-# default customize_flags
-VM_CUSTOMIZE_FLAGS = --no-network
+
+VM_CUSTOMIZE_FLAGS =
+
+# HACK: https://github.com/containers/podman/issues/21896
+VM_CUSTOMIZE_FLAGS += --run-command 'nmcli con add type dummy con-name fake ifname fake0 ip4 1.2.3.4/24 gw4 1.2.3.1 >&2'
+
+# the following scenarios need network access
+ifeq ("$(TEST_SCENARIO)","updates-testing")
+VM_CUSTOMIZE_FLAGS += --run-command 'dnf -y update --setopt=install_weak_deps=False --enablerepo=updates-testing >&2'
+else ifeq ("$(TEST_SCENARIO)","docker-next")
+VM_CUSTOMIZE_FLAGS += --run-command 'dnf -y copr enable rhcontainerbot/docker-next >&2; dnf -y update --repo "copr*" >&2'
+else
+# default scenario does not install packages
+VM_CUSTOMIZE_FLAGS += --no-network
+endif
 
 ifeq ($(TEST_COVERAGE),yes)
 RUN_TESTS_OPTIONS+=--coverage
@@ -41,7 +54,7 @@ COCKPIT_REPO_FILES = \
 	$(NULL)
 
 COCKPIT_REPO_URL = https://github.com/cockpit-project/cockpit.git
-COCKPIT_REPO_COMMIT = e2f3e9eb7c3635e7ac3ddf751c6bb3ff5351062e # 308 + 40 commits
+COCKPIT_REPO_COMMIT = 50fc1b962eeefefc9926ece8e4891477a88a4454 # 312 + 22 commits
 
 $(COCKPIT_REPO_FILES): $(COCKPIT_REPO_STAMP)
 COCKPIT_REPO_TREE = '$(strip $(COCKPIT_REPO_COMMIT))^{tree}'
@@ -153,14 +166,6 @@ rpm: $(TARFILE)
 	rpmbuild -tb --define "_topdir $(CURDIR)/tmp/rpmbuild" $(TARFILE)
 	find tmp/rpmbuild -name '*.rpm' -printf '%f\n' -exec mv {} . \;
 	rm -r tmp/rpmbuild
-
-ifeq ("$(TEST_SCENARIO)","updates-testing")
-VM_CUSTOMIZE_FLAGS = --run-command 'dnf -y update --setopt=install_weak_deps=False --enablerepo=updates-testing >&2'
-endif
-
-ifeq ("$(TEST_SCENARIO)","podman-next")
-VM_CUSTOMIZE_FLAGS = --run-command 'dnf -y copr enable rhcontainerbot/podman-next >&2; dnf -y update --repo 'copr*' >&2'
-endif
 
 # build a VM with locally built distro pkgs installed
 $(VM_IMAGE): $(TARFILE) packaging/debian/rules packaging/debian/control packaging/arch/PKGBUILD bots

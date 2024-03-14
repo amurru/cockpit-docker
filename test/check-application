@@ -3,7 +3,6 @@
 # See https://github.com/cockpit-project/cockpit/blob/main/test/common/testlib.py
 # "class Browser" and "class MachineCase" for the available API.
 
-import json
 import os
 import sys
 import time
@@ -101,25 +100,32 @@ class TestApplication(testlib.MachineCase):
         super().setUp()
         m = self.machine
         m.execute("""
-            systemctl stop docker.service; systemctl --now enable docker.socket
-            # Ensure docker is really stopped, as sometimes restore_dir flakes on Debian-testing
+            systemctl stop docker.service; systemctl stop containerd.service; systemctl --now enable docker.socket
+            # Ensure docker is really stopped, otherwise it keeps the containers/ directory busy
             pkill -e -9 docker || true
             while pgrep docker; do sleep 0.1; done
-            findmnt --list -otarget | grep /var/lib/containers/. | xargs -r umount
+            pkill -e -9 containerd || true
+            while pgrep containerd; do sleep 0.1; done
+            findmnt --list -otarget | grep /var/lib/docker/. | xargs -r umount
             sync
             """)
 
         # backup/restore pristine docker state, so that tests can run on existing testbeds
-        self.restore_dir("/var/lib/containers", reboot_safe=True)
+        self.restore_dir("/var/lib/docker")
 
         # HACK: sometimes docker leaks mounts
         self.addCleanup(m.execute, """
-            systemctl stop docker.service docker.socket
+            systemctl stop docker.service containerd.service docker.socket
+
             systemctl reset-failed docker.service docker.socket
             docker system reset --force
             pkill -e -9 docker || true
             while pgrep docker; do sleep 0.1; done
-            findmnt --list -otarget | grep /var/lib/containers/. | xargs -r umount
+            pkill -e -9 containerd || true
+            while pgrep containerd; do sleep 0.1; done
+
+            # HACK: sometimes docker leaks mounts
+            findmnt --list -otarget | grep /var/lib/docker/. | xargs -r umount
             sync
             """)
 
@@ -137,15 +143,15 @@ class TestApplication(testlib.MachineCase):
                                                     ssh_port=m.ssh_port,
                                                     identity_file=m.identity_file)
 
-        # Enable user service as well
-        self.admin_s.execute("systemctl --user stop docker.service; systemctl --now --user enable docker.socket")
-        self.restore_dir("/home/admin/.local/share/containers", reboot_safe=True)
-        self.addCleanup(self.admin_s.execute, "systemctl --user stop docker.service docker.socket || true")
-        # Ubuntu has old docker that does not know about --time
-        if m.image.startswith("ubuntu"):
-            self.addCleanup(self.admin_s.execute, "docker rm --force --all || true", timeout=300)
+        # HACK: system reset has 10s timeout, make that faster with an extra `stop`
+        # https://github.com/containers/podman/issues/21874
+        # Ubuntu 22.04 has old podman that does not know about rm --time
+        if m.image == 'ubuntu-2204':
+            self.addCleanup(self.admin_s.execute, "docker rm --force --all", timeout=300)
+            self.addCleanup(self.admin_s.execute, "docker pod rm --force --all", timeout=300)
         else:
-            self.addCleanup(self.admin_s.execute, "docker rm --force --time 0 --all || true")
+            self.addCleanup(self.admin_s.execute, "docker rm --force --time 0 --all")
+            self.addCleanup(self.admin_s.execute, "docker pod rm --force --time 0 --all")
 
         # But disable it globally so that "systemctl --user disable" does what we expect
         m.execute("systemctl --global disable docker.socket")
@@ -157,9 +163,6 @@ class TestApplication(testlib.MachineCase):
         self.has_criu = "debian" not in m.image and "ubuntu" not in m.image
         self.has_selinux = "arch" not in m.image and "debian" not in m.image and "ubuntu" not in m.image
         self.has_cgroupsV2 = m.image not in ["centos-8-stream"] and not m.image.startswith('rhel-8')
-
-        # HACK: older c-ws versions always log an assertion, fixed in PR cockpit#16765
-        self.allow_journal_messages("json_object_get_string_member: assertion 'node != NULL' failed")
 
         self.system_images_count = int(self.execute(True, "docker images -n | wc -l").strip())
         self.user_images_count = int(self.execute(False, "docker images -n | wc -l").strip())
@@ -197,11 +200,11 @@ class TestApplication(testlib.MachineCase):
 
     def performContainerAction(self, container, cmd):
         b = self.browser
-        b.click(f"#containers-containers tbody tr:contains('{container}') .pf-v5-c-dropdown__toggle")
-        b.click(f"#containers-containers tbody tr:contains('{container}') .pf-v5-c-dropdown__menu li:contains({cmd})")
+        b.click(f"#containers-containers tbody tr:contains('{container}') .pf-v5-c-menu-toggle")
+        b.click(f"#containers-containers tbody tr:contains('{container}') button.pf-v5-c-menu__item:contains({cmd})")
 
     def getContainerAction(self, container, cmd):
-        return f"#containers-containers tbody tr:contains('{container}') .pf-v5-c-dropdown__menu li:contains({cmd})"
+        return f"#containers-containers tbody tr:contains('{container}') button.pf-v5-c-menu__item:contains({cmd})"
 
     def toggleExpandedContainer(self, container):
         b = self.browser
@@ -274,8 +277,8 @@ class TestApplication(testlib.MachineCase):
         b = self.browser
 
         b.click(f"#pod-{podName}-{podOwner}-action-toggle")
-        b.click(f"ul[aria-labelledby=pod-{podName}-{podOwner}-action-toggle] li > button.pod-action-{action.lower()}")
-        b.wait_not_present(f"ul[aria-labelledby=pod-{podName}-{podOwner}-action-toggle]")
+        b.click(f"ul.pf-v5-c-menu__list li > button.pod-action-{action.lower()}")
+        b.wait_not_present("ul.pf-v5-c-menu__list")
 
     def getStartTime(self, container: str, *, auth: bool) -> str:
         # don't format the raw time strings from the API, force json format
@@ -461,7 +464,7 @@ class TestApplication(testlib.MachineCase):
             become_superuser(b, passwordless=self.machine.image == "rhel4edge")
 
         # We are notified that we can also start the system one
-        b.wait_in_text("#overview div.pf-v5-c-alert .pf-v5-c-alert__title", "System Docker service is also available")
+        b.wait_in_text("#overview div.pf-v5-c-alert .pf-v5-c-alert__title", "Docker service is available")
         b.click("#overview div.pf-v5-c-alert .pf-v5-c-alert__action > button:contains(Start)")
         b.wait_not_present("#overview div.pf-v5-c-alert .pf-v5-c-alert__title")
 
@@ -550,7 +553,7 @@ class TestApplication(testlib.MachineCase):
         b.wait_not_present("#containers-containers-owner")
 
         # Test the isSystem boolean for searching
-        # https://github.com/cockpit-project/cockpit-docker/pull/891
+        # https://github.com/cockpit-project/cockpit-podman/pull/891
         b.click("#containers-containers-create-container-btn")
         b.set_input_text("#create-image-image-select-typeahead", "registry")
         b.wait_visible('button.pf-v5-c-select__menu-item:contains("registry")')
@@ -560,6 +563,10 @@ class TestApplication(testlib.MachineCase):
 
     def _testBasic(self, auth):
         b = self.browser
+
+        def clickDeleteImage(image_sel):
+            b.click(f'{image_sel} .pf-v5-c-menu-toggle')
+            b.click(image_sel + " button.btn-delete")
 
         if not auth:
             self.allow_browser_errors("Failed to start system docker.socket.*")
@@ -612,7 +619,7 @@ class TestApplication(testlib.MachineCase):
         hello_sel = f"#containers-images tbody tr[data-row-id=\"{images[IMG_HELLO_LATEST]}{auth}\"]".lower()
         b.wait_visible(hello_sel)
         b.click(hello_sel + " td.pf-v5-c-table__toggle button")
-        b.click(hello_sel + " .pf-v5-c-dropdown__toggle")
+        b.click(hello_sel + " .pf-v5-c-menu-toggle")
         b.wait_visible(hello_sel + " button.btn-delete")
         b.wait_in_text("#containers-images tbody.pf-m-expanded tr .image-details:first-child", "Command/run.sh")
         # Show history
@@ -644,10 +651,6 @@ class TestApplication(testlib.MachineCase):
             # Run two containers as system (first exits immediately)
             self.execute(auth, f"docker run -d --name test-sh-system --stop-timeout 0 {IMG_ALPINE} sh")
             self.execute(auth, f"docker run -d --name swamped-crate-system --stop-timeout 0 {IMG_BUSYBOX} sleep 1000")
-
-        # Run two containers as admin (first exits immediately)
-        self.execute(False, f"docker run -d --name test-sh-user --stop-timeout 0 {IMG_ALPINE} sh")
-        self.execute(False, f"docker run -d --name swamped-crate-user --stop-timeout 0 {IMG_BUSYBOX} sleep 1000")
 
         # Test owner filtering
         if auth:
@@ -684,26 +687,16 @@ class TestApplication(testlib.MachineCase):
         else:  # No 'owner' selector when not privileged
             b.wait_not_present("#containers-containers-owner")
 
-        user_containers = {}
         system_containers = {}
         for container in self.execute(True, "docker ps --all --no-trunc").strip().split("\n")[1:]:
             # <sha> <other things> <name>
             items = container.split()
             system_containers[items[-1]] = items[0]
-        for container in self.execute(False, "docker ps --all --no-trunc").strip().split("\n")[1:]:
-            # <sha> <other things> <name>
-            items = container.split()
-            user_containers[items[-1]] = items[0]
-
         # running busybox shown
         if auth:
             self.waitContainerRow("swamped-crate-system")
             self.waitContainer(system_containers["swamped-crate-system"], True, name='swamped-crate-system',
                                image=IMG_BUSYBOX, cmd="sleep 1000", state='Running')
-
-        self.waitContainerRow("swamped-crate-user")
-        self.waitContainer(user_containers["swamped-crate-user"], False, name='swamped-crate-user',
-                           image=IMG_BUSYBOX, cmd="sleep 1000", state='Running')
 
         # exited alpine not shown
         b.wait_not_in_text("#containers-containers", "alpine")
@@ -717,18 +710,12 @@ class TestApplication(testlib.MachineCase):
             self.waitContainer(system_containers["test-sh-system"], True, name='test-sh-system', image=IMG_ALPINE,
                                cmd='sh', state=NOT_RUNNING)
 
-        self.waitContainer(user_containers["test-sh-user"], False, name='test-sh-user', image=IMG_ALPINE,
-                           cmd='sh', state=NOT_RUNNING)
-
-        self.performContainerAction("swamped-crate-user", "Delete")
-        self.confirm_modal("Cancel")
-
         if auth:
             self.performContainerAction("swamped-crate-system", "Delete")
             self.confirm_modal("Cancel")
 
         # Checked order of containers
-        expected = ["swamped-crate-user", "test-sh-user"]
+        expected = ["swamped-crate-user"]
         if auth:
             expected.extend(["swamped-crate-system", "test-sh-system"])
         expected.extend([expected_ws])
@@ -739,8 +726,6 @@ class TestApplication(testlib.MachineCase):
         if auth:
             self.waitContainer(system_containers["swamped-crate-system"], True, name='swamped-crate-system',
                                image=IMG_BUSYBOX, cmd="sleep 1000", state='Running')
-        self.waitContainer(user_containers["swamped-crate-user"], False, name='swamped-crate-user',
-                           image=IMG_BUSYBOX, cmd="sleep 1000", state='Running')
         # check exited alpine not in running list
         b.wait_not_in_text("#containers-containers", "alpine")
 
@@ -751,15 +736,6 @@ class TestApplication(testlib.MachineCase):
             self.waitContainerRow("swamped-crate-system", False)
 
         self.filter_containers("all")
-
-        self.performContainerAction("swamped-crate-user", "Delete")
-        self.confirm_modal("Force delete")
-        self.waitContainerRow("swamped-crate-user", False)
-
-        self.waitContainerRow("test-sh-user")
-        self.performContainerAction("test-sh-user", "Delete")
-        self.confirm_modal("Delete")
-        b.wait_not_in_text("#containers-containers", "test-sh-user")
 
         if auth:
             self.waitContainerRow("test-sh-system")
@@ -782,8 +758,7 @@ class TestApplication(testlib.MachineCase):
         b.wait_in_text(busybox_sel + " + tr", f"{IMG_BUSYBOX}:3")
         b.wait_in_text(busybox_sel + " + tr", f"{IMG_BUSYBOX}:4")
 
-        b.click(busybox_sel + " .pf-v5-c-dropdown__toggle")
-        b.click(busybox_sel + " button.btn-delete")
+        clickDeleteImage(busybox_sel)
         self.assertTrue(b.get_checked(f".pf-v5-c-check__input[aria-label='{IMG_BUSYBOX_LATEST}']"))
         b.set_checked(f".pf-v5-c-check__input[aria-label='{IMG_BUSYBOX}:1']", True)
         b.set_checked(f".pf-v5-c-check__input[aria-label='{IMG_BUSYBOX}:3']", True)
@@ -794,8 +769,7 @@ class TestApplication(testlib.MachineCase):
         b.wait_not_in_text(busybox_sel + " + tr", f"{IMG_BUSYBOX}:1")
         b.wait_not_in_text(busybox_sel + " + tr", f"{IMG_BUSYBOX}:3")
 
-        b.click(busybox_sel + " .pf-v5-c-dropdown__toggle")
-        b.click(busybox_sel + " button.btn-delete")
+        clickDeleteImage(busybox_sel)
         b.click("#delete-all")
         self.assertTrue(b.get_checked(f".pf-v5-c-check__input[aria-label='{IMG_BUSYBOX_LATEST}']"))
         self.assertTrue(b.get_checked(f".pf-v5-c-check__input[aria-label='{IMG_BUSYBOX}:2']"))
@@ -834,8 +808,7 @@ class TestApplication(testlib.MachineCase):
         alpine_sel = f"#containers-images tbody tr[data-row-id=\"{images[IMG_ALPINE_LATEST]}{auth}\"]".lower()
         b.wait_visible(alpine_sel)
         b.click(alpine_sel + " td.pf-v5-c-table__toggle button")
-        b.click(alpine_sel + " .pf-v5-c-dropdown__toggle")
-        b.click(alpine_sel + " button.btn-delete")
+        clickDeleteImage(alpine_sel)
         self.confirm_modal("Delete")
         self.confirm_modal("Force delete")
         b.wait_not_present(alpine_sel)
@@ -881,8 +854,7 @@ class TestApplication(testlib.MachineCase):
         # Delete intermediate images
         intermediate_image_sel = "#containers-images tbody:last-child:contains('<none>:<none>')"
         b.click(".listing-action button:contains('Show intermediate images')")
-        b.click(intermediate_image_sel + " .pf-v5-c-dropdown__toggle")
-        b.click(intermediate_image_sel + " button.btn-delete")
+        clickDeleteImage(intermediate_image_sel)
         self.confirm_modal("Delete")
         b.wait_not_present(intermediate_image_sel)
 
@@ -890,7 +862,7 @@ class TestApplication(testlib.MachineCase):
         tmpdir = self.execute(auth, "mktemp -d").strip()
         self.execute(auth, f"echo 'FROM {IMG_REGISTRY}\nRUN ls' > {tmpdir}/Dockerfile")
         IMG_INTERMEDIATE = 'localhost/test-intermediate'
-        self.execute(auth, f"podman build -t {IMG_INTERMEDIATE} {tmpdir}")
+        self.execute(auth, f"docker build -t {IMG_INTERMEDIATE} {tmpdir}")
         b.click(f'#containers-images tbody tr:contains("{IMG_INTERMEDIATE}") .ct-container-create')
         b.wait_visible('div.pf-v5-c-modal-box header:contains("Create container")')
         b.click("#create-image-create-btn")
@@ -898,9 +870,8 @@ class TestApplication(testlib.MachineCase):
         self.waitContainerRow(IMG_INTERMEDIATE)
 
         # Delete intermediate image which is in use
-        self.execute(auth, f"podman untag {IMG_INTERMEDIATE}")
-        b.click(intermediate_image_sel + " .pf-v5-c-dropdown__toggle")
-        b.click(intermediate_image_sel + " button.btn-delete")
+        self.execute(auth, f"docker untag {IMG_INTERMEDIATE}")
+        clickDeleteImage(intermediate_image_sel)
         self.confirm_modal("Delete")
         self.confirm_modal("Force delete")
         b.wait_not_in_text("#containers-images", "<none>:<none>")
@@ -1127,7 +1098,7 @@ class TestApplication(testlib.MachineCase):
                 b.click(sel + " td.pf-v5-c-table__toggle button")
 
                 # Click the delete icon on the image row
-                b.click(sel + " .pf-v5-c-dropdown__toggle")
+                b.click(sel + " .pf-v5-c-menu-toggle")
                 b.click(sel + ' button.btn-delete')
 
                 if another:
@@ -1188,7 +1159,7 @@ class TestApplication(testlib.MachineCase):
             .expectDownloadSuccess()
         # test recognition/deletion of multiple image tags
         second_tag = "localhost/copybox:latest"
-        self.execute(False, f"podman tag localhost:5000/my-busybox {second_tag}")
+        self.execute(False, f"docker tag localhost:5000/my-busybox {second_tag}")
         # expand details
         b.click("#containers-images tr:contains('my-busybox') td.pf-v5-c-table__toggle button")
         b.wait_in_text("#containers-images tbody.pf-m-expanded tr .image-details", second_tag)
@@ -1237,7 +1208,7 @@ class TestApplication(testlib.MachineCase):
         container_sha = self.execute(auth, "docker inspect --format '{{.Id}}' swamped-crate").strip()
         self.waitContainer(container_sha, auth, name='swamped-crate', image=IMG_BUSYBOX,
                            state='Exited', owner="system" if auth else "admin")
-        b.click("#containers-containers tbody tr:contains('swamped-crate') .pf-v5-c-dropdown__toggle")
+        b.click("#containers-containers tbody tr:contains('swamped-crate') .pf-v5-c-menu-toggle")
 
         if not auth:
             # Checkpoint/restore is not supported on user containers yet - the related buttons should not be shown
@@ -1247,7 +1218,7 @@ class TestApplication(testlib.MachineCase):
         # Health check is not set up
         b.wait_not_present(self.getContainerAction('swamped-crate', 'Run health check'))
 
-        b.click("#containers-containers tbody tr:contains('swamped-crate') .pf-v5-c-dropdown__toggle")
+        b.click("#containers-containers tbody tr:contains('swamped-crate') .pf-v5-c-menu-toggle")
 
         # Start the container
         self.performContainerAction(IMG_BUSYBOX, "Start")
@@ -1296,10 +1267,10 @@ class TestApplication(testlib.MachineCase):
         self.waitContainerRow(IMG_BUSYBOX)
         if not auth:
             # Check that the checkpoint option is not present for rootless
-            b.click(f"#containers-containers tbody tr:contains('{IMG_BUSYBOX}') .pf-v5-c-dropdown__toggle")
+            b.click(f"#containers-containers tbody tr:contains('{IMG_BUSYBOX}') .pf-v5-c-menu-toggle")
             b.wait_visible(self.getContainerAction(IMG_BUSYBOX, 'Force stop'))
             b.wait_not_present(self.getContainerAction(IMG_BUSYBOX, 'Checkpoint'))
-            b.click(f"#containers-containers tbody tr:contains('{IMG_BUSYBOX}') .pf-v5-c-dropdown__toggle")
+            b.click(f"#containers-containers tbody tr:contains('{IMG_BUSYBOX}') .pf-v5-c-menu-toggle")
         # Stop the container
         self.performContainerAction(IMG_BUSYBOX, "Force stop")
 
@@ -1378,9 +1349,9 @@ class TestApplication(testlib.MachineCase):
         b.wait(lambda: self.execute(True, "docker ps --all | grep -e swamped-crate -e Exited"))
 
         # Check that the restore option is not present (i.e. start is a regular button)
-        b.click(f"#containers-containers tbody tr:contains('{IMG_BUSYBOX}') .pf-v5-c-dropdown__toggle")
+        b.click(f"#containers-containers tbody tr:contains('{IMG_BUSYBOX}') .pf-v5-c-menu-toggle")
         b.wait_not_present(self.getContainerAction(IMG_BUSYBOX, 'Restore'))
-        b.click(f"#containers-containers tbody tr:contains('{IMG_BUSYBOX}') .pf-v5-c-dropdown__toggle")
+        b.click(f"#containers-containers tbody tr:contains('{IMG_BUSYBOX}') .pf-v5-c-menu-toggle")
 
         # Start the container
         self.performContainerAction("swamped-crate", "Start")
@@ -1451,17 +1422,10 @@ class TestApplication(testlib.MachineCase):
         b = self.browser
 
         def disable_system():
-            self.execute(True, "systemctl disable --now docker.socket")
-            self.execute(True, "killall docker || true")
+            self.execute(True, "systemctl disable --now docker.socket; systemctl stop docker.service; systemctl stop containerd.service")
 
         def enable_system():
             self.execute(True, "systemctl enable --now docker.socket")
-
-        def enable_user():
-            self.execute(False, "systemctl --user enable --now docker.socket")
-
-        def disable_user():
-            self.execute(False, "systemctl --user disable --now docker.socket")
 
         def is_active_system(string):
             b.wait(lambda: self.execute(True, "systemctl is-active docker.socket || true").strip() == string)
@@ -1469,14 +1433,7 @@ class TestApplication(testlib.MachineCase):
         def is_enabled_system(string):
             b.wait(lambda: self.execute(True, "systemctl is-enabled docker.socket || true").strip() == string)
 
-        def is_active_user(string):
-            b.wait(lambda: self.execute(False, "systemctl --user is-active docker.socket || true").strip() == string)
-
-        def is_enabled_user(string):
-            b.wait(lambda: self.execute(False, "systemctl --user is-enabled docker.socket || true").strip() == string)
-
         disable_system()
-        disable_user()
         self.login_and_go("/docker")
 
         # Troubleshoot action
@@ -1495,52 +1452,31 @@ class TestApplication(testlib.MachineCase):
         b.wait_not_present("#overview div.pf-v5-c-alert.pf-m-info")
 
         is_active_system("active")
-        is_active_user("active")
         is_enabled_system("enabled")
-        is_enabled_user("enabled")
 
         # Start action, without enabling
         disable_system()
-        disable_user()
         b.click("#app .pf-v5-c-empty-state input[type=checkbox]")
         b.assert_pixels("#app .pf-v5-c-empty-state", "docker-service-disabled", skip_layouts=["medium", "mobile"])
         b.click("#app .pf-v5-c-empty-state button.pf-m-primary")
 
         b.wait_visible("#containers-containers")
         is_enabled_system("disabled")
-        is_enabled_user("disabled")
         is_active_system("active")
-        is_active_user("active")
 
         b.logout()
         disable_system()
         # HACK: Due to https://github.com/containers/docker/issues/7180, avoid
         # user docker.service to time out; make sure to start it afresh
-        disable_user()
-        enable_user()
         self.login_and_go("/docker")
-        b.wait_in_text("#overview div.pf-v5-c-alert .pf-v5-c-alert__title", "System Docker service is also available")
+        self.login_and_go("/docker")
+        b.wait_in_text("#overview div.pf-v5-c-alert .pf-v5-c-alert__title", "Docker service is available")
         b.click("#overview div.pf-v5-c-alert .pf-v5-c-alert__action > button:contains(Start)")
         b.wait_not_present("#overview div.pf-v5-c-alert")
         is_active_system("active")
-        is_active_user("active")
-        is_enabled_user("enabled")
         is_enabled_system("enabled")
 
         b.logout()
-        disable_user()
-        enable_system()
-        self.login_and_go("/docker")
-        b.wait_in_text("#overview div.pf-v5-c-alert .pf-v5-c-alert__title", "User Docker service is also available")
-        b.click("#overview div.pf-v5-c-alert .pf-v5-c-alert__action > button:contains(Start)")
-        b.wait_not_present("#overview div.pf-v5-c-alert")
-        is_active_system("active")
-        is_active_user("active")
-        is_enabled_user("enabled")
-        is_enabled_system("enabled")
-
-        b.logout()
-        disable_user()
         disable_system()
         self.login_and_go("/docker", superuser=False)
         b.click("#app .pf-v5-c-empty-state button.pf-m-primary")
@@ -1548,14 +1484,11 @@ class TestApplication(testlib.MachineCase):
         b.wait_not_present("#overview div.pf-v5-c-alert")
 
         is_active_system("inactive")
-        is_active_user("active")
-        is_enabled_user("enabled")
         is_enabled_system("disabled")
         b.logout()
 
         # no Troubleshoot action without cockpit-system package
         disable_system()
-        disable_user()
         self.restore_dir("/usr/share/cockpit/systemd")
         self.machine.execute("rm /usr/share/cockpit/systemd/manifest.json")
         self.login_and_go("/docker")
@@ -1569,12 +1502,6 @@ class TestApplication(testlib.MachineCase):
         self.allow_journal_messages(".*docker/docker.sock/.*: couldn't connect:.*")
         self.allow_journal_messages(".*docker/docker.sock: .*Connection.*Error.*")
         self.allow_journal_messages(".*docker/docker.sock/.*/events.*: received truncated HTTP response.*")
-
-        # HACK: ignore pybridge ConnectionResetError task crash until
-        # https://github.com/cockpit-project/cockpit/pull/19052 is on all our images
-        self.allow_journal_messages(".*(Traceback|Exception in thread).*")
-        self.allow_journal_messages("^^^.*")
-        self.allow_journal_messages(".*(self|response).*")
 
     def testCreateContainerSystem(self):
         self._testCreateContainer(True)
@@ -1641,8 +1568,7 @@ class TestApplication(testlib.MachineCase):
         b.click('.pf-v5-c-modal-box__footer #create-image-create-run-btn')
         sel = " span:not(.downloading)"
         b.wait(lambda: self.getContainerAttr(container_name, "State", sel) in 'Running')
-        output = self.execute(auth, f"docker exec {container_name} ls -lh /latest || true").strip()
-        self.assertEqual('', output)
+        self.execute(auth, f"docker exec {container_name} test ! -e /latest")
 
         # Now that we have downloaded an image, verify that selecting download latest image
         # downloads the latest image we now push to the registry. Note this image has a /latest file
@@ -1912,7 +1838,7 @@ class TestApplication(testlib.MachineCase):
         ports = self.execute(auth, "docker inspect --format '{{.NetworkSettings.Ports}}' busybox-with-tty")
         self.assertIn('5000/tcp:[{ 6000}]', ports)
         self.assertIn('5001/udp:[{127.0.0.1 6001}]', ports)
-        self.assertIn('8001/tcp:[{ ', ports)
+        self.assertIn('8001/tcp:[{', ports)
         self.assertIn('9001/tcp:[{127.0.0.2 ', ports)
         self.assertNotIn('7001/tcp', ports)
 
@@ -2108,8 +2034,8 @@ class TestApplication(testlib.MachineCase):
         b.set_input_text('#containers-filter', '')
 
         if not auth or not self.machine.ostree_image:  # don't kill ws container
-            # Ubuntu has old docker that does not know about --time
-            if not m.image.startswith("ubuntu"):
+            # Ubuntu 22.04 has old docker that does not know about --time
+            if m.image != 'ubuntu-2204':
                 # Remove all containers first as it is not possible to set --time 0 to rmi command
                 self.execute(auth, "docker rm --all --force --time 0")
             self.execute(auth, "docker rmi -af")
@@ -2191,7 +2117,7 @@ class TestApplication(testlib.MachineCase):
         # By default we have 3 unused images, start one.
         self.execute(auth or root, f"docker run -d --name used_image --stop-timeout 0 {IMG_ALPINE} sh")
         b.click("#image-actions-dropdown")
-        b.click("button:contains(Prune unused images)")
+        b.click("#prune-unused-images-button")
 
         if auth:
             b.wait_js_func("ph_count_check", ".pf-v5-c-modal-box__body .pf-v5-c-list li",
@@ -2217,7 +2143,7 @@ class TestApplication(testlib.MachineCase):
 
         # Prune button should now be disabled
         b.click("#image-actions-dropdown")
-        b.wait_visible("button:contains(Prune unused images).pf-m-disabled")
+        b.wait_visible(".pf-m-disabled.pf-v5-c-menu__list-item:contains(Prune unused images)")
 
     def testPruneUnusedImagesSystemSelections(self):
         """ Test the prune unused images selection options"""
@@ -2257,7 +2183,7 @@ class TestApplication(testlib.MachineCase):
 
         # Prune button should now be disabled
         b.click("#image-actions-dropdown")
-        b.wait_visible("button:contains(Prune unused images).pf-m-disabled")
+        b.wait_visible(".pf-v5-c-menu__list-item.pf-m-disabled:contains(Prune unused images)")
 
     def testPruneUnusedContainersSystem(self):
         self._testPruneUnusedContainersSystem(True)
@@ -2325,9 +2251,12 @@ class TestApplication(testlib.MachineCase):
             b.wait_not_present(f"{groupSelector} .pf-v5-c-helper-text__item-text")
             b.wait_visible(".pf-v5-c-modal-box__footer #create-image-create-run-btn:not(:disabled)")
 
-        """ Test the validation errors"""
-        self.allow_browser_errors(
-            "error: Container failed to be started: Internal Server Error: rootlessport listen tcp 0.0.0.0:5000.*")
+        # Test the validation errors
+
+        # complaint about port conflict
+        self.allow_browser_errors("error: Container failed to be started:.*")
+        self.allow_browser_errors("No routable interface.*")
+        self.allow_browser_errors(".*ddress already in use.*5000.*")
         b = self.browser
         self.login(False)
         container_name = 'portused'
@@ -2371,7 +2300,8 @@ class TestApplication(testlib.MachineCase):
         b.set_input_text('#run-image-dialog-publish-0-host-port', '5000')
         b.set_input_text('#run-image-dialog-publish-0-container-port', '5000')
         b.click('.pf-v5-c-modal-box__footer #create-image-create-run-btn')
-        b.wait_in_text(".pf-v5-c-alert", "address already in use")
+        # Can be "[aA]ddress"
+        b.wait_in_text(".pf-v5-c-alert", "ddress already in use")
 
         # Changing the port should allow creation of container
         b.set_input_text('#run-image-dialog-publish-0-host-port', '5001')
@@ -2512,11 +2442,6 @@ class TestApplication(testlib.MachineCase):
     def testHealthcheckUser(self):
         self._testHealthcheck(False)
 
-    # Ubuntu 2204 lacks user systemd units
-    # https://github.com/containers/docker/commit/9312d458b4254b48e331d1ae40cb2f6d0fec9bd0
-    @testlib.skipImage("docker-restart not available for user", "ubuntu-2204")
-    def testDockerRestartEnabledUser(self):
-        self._testDockerRestartEnabled(False)
 
     def testdockerRestartEnabledSystem(self):
         self._testdockerRestartEnabled(True)
@@ -2525,14 +2450,6 @@ class TestApplication(testlib.MachineCase):
         b = self.browser
         if auth:
             self.addCleanup(self.machine.execute, "systemctl disable docker-restart.service")
-        else:
-            self.addCleanup(self.machine.execute, "systemctl --user disable docker-restart.service")
-            self.machine.execute("loginctl enable-linger $(id -u admin)")
-            # HACK: verify that the file we watch exists
-            self.assertTrue(self.machine.execute("""
-                    if test -e /var/lib/systemd/linger/admin; then echo yes; fi
-            """).strip() != "")
-            self.addCleanup(self.machine.execute, "loginctl disable-linger $(id -u admin)")
 
         # Drop user images for easy selection
         if auth:
@@ -2561,50 +2478,7 @@ class TestApplication(testlib.MachineCase):
         self.assertEqual(self.getRestartPolicy(auth, container_name), '{always 0}')
         if auth:
             dockerRestartEnabled = self.execute(True, "systemctl is-enabled docker-restart.service || true").strip()
-        else:
-            dockerRestartEnabled = self.execute(False,
-                                                "systemctl --user is-enabled docker-restart.service || true").strip()
         self.assertEqual(dockerRestartEnabled, 'enabled')
-
-    def _testCreateContainerInPod(self, auth):
-        b = self.browser
-
-        container_name = 'containerinpod'
-        podname = "pod1"
-        self.execute(auth, f"docker pod create --infra=false --name={podname}")
-
-        self.login(auth)
-
-        self.filter_containers('all')
-        b.click(".create-container-in-pod")
-
-        # the podname should be in the "Create container" header
-        self.assertIn(podname, b.text("#pf-modal-part-1"))
-
-        b.set_input_text("#run-image-dialog-name", container_name)
-        b.set_input_text("#create-image-image-select-typeahead", IMG_BUSYBOX_LATEST)
-        b.click('button.pf-v5-c-toggle-group__button:contains("Local")')
-        b.click(f'button.pf-v5-c-select__menu-item:contains("{IMG_BUSYBOX_LATEST}")')
-        b.click('.pf-v5-c-modal-box__footer #create-image-create-run-btn')
-        b.wait_not_present("#run-image-dialog-name")
-
-        container_sha = self.execute(auth, f"docker inspect --format '{{{{.Id}}}}' {container_name}").strip()
-        self.waitContainer(container_sha, auth, name=container_name, image=IMG_BUSYBOX, cmd='sh',
-                           state='Running', owner="system" if auth else "admin", pod=podname)
-
-        # Check that we correctly preselect owner
-        if auth:
-            self.execute(False, "docker pod create --infra=false --name=system_pod")
-            b.click("#table-system_pod .create-container-in-pod")
-            b.wait_visible("#run-image-dialog-owner-user:checked")
-            b.wait_visible("#run-image-dialog-owner-user:disabled")
-            b.wait_visible("#run-image-dialog-owner-system:disabled")
-
-    def testCreateContainerInPodSystem(self):
-        self._testCreateContainerInPod(True)
-
-    def testCreateContainerInPodUser(self):
-        self._testCreateContainerInPod(False)
 
     def testPauseResumeContainerSystem(self):
         self._testPauseResumeContainer(True)
@@ -2641,9 +2515,6 @@ class TestApplication(testlib.MachineCase):
 
     def testRenameContainerSystem(self):
         self._testRenameContainer(True)
-
-    def testRenameContainerUser(self):
-        self._testRenameContainer(False)
 
     def _testRenameContainer(self, auth):
         b = self.browser
@@ -2815,21 +2686,14 @@ class TestApplication(testlib.MachineCase):
         # b.wait_in_text('#containers-containers tr:contains("alpine") dt:contains("Ports") + dd',
         #                ' \u2192 9001/tcp')
 
-    #     # Validate ports via inspect as we do not show them in the UI yet
-    #     pod_info = json.loads(self.execute(auth, f"docker pod inspect {pod_name}").strip())
-    #     port_bindings = pod_info['InfraConfig']['PortBindings']
-    #     self.assertEqual(port_bindings['5000/tcp'], [{'HostIp': '', 'HostPort': '6000'}])
-    #     self.assertEqual(port_bindings['5001/udp'], [{'HostIp': '127.0.0.1', 'HostPort': '6001'}])
-    #     # Host port is randomized as not provided
-    #     self.assertTrue(port_bindings['9001/tcp'])
 
-    #     # Create pod as admin
-    #     if auth:
-    #         pod_name = 'testpod2'
-    #         b.click("#containers-containers-create-pod-btn")
-    #         b.set_input_text("#create-pod-dialog-name", pod_name)
-    #         b.click("#create-pod-dialog-owner-user")
-    #         b.click("#create-pod-create-btn")
+        # Create pod as admin
+        # if auth:
+        #     pod_name = 'testpod2'
+        #     b.click("#containers-containers-create-pod-btn")
+        #     b.set_input_text("#create-pod-dialog-name", pod_name)
+        #     b.click("#create-pod-dialog-owner-user")
+        #     b.click("#create-pod-create-btn")
 
     #         b.set_val("#containers-containers-filter", "all")
     #         self.waitPodContainer(pod_name, [])

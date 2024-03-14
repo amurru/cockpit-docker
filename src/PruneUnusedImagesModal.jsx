@@ -13,7 +13,7 @@ import "@patternfly/patternfly/utilities/Spacing/spacing.css";
 
 const _ = cockpit.gettext;
 
-function ImageOptions({ images, checked, isSystem, handleChange, name, showCheckbox }) {
+function ImageOptions({ images, checked, handleChange, name, showCheckbox }) {
     const [isExpanded, onToggle] = useState(false);
     let shownImages = images;
     if (!isExpanded) {
@@ -29,7 +29,7 @@ function ImageOptions({ images, checked, isSystem, handleChange, name, showCheck
         <Flex flex={{ default: 'column' }}>
             {showCheckbox &&
                 <Checkbox
-                  label={isSystem ? _("Delete unused system images:") : _("Delete unused user images:")}
+                  label={_("Delete unused images:")}
                   isChecked={checked}
                   id={name}
                   name={name}
@@ -53,22 +53,14 @@ function ImageOptions({ images, checked, isSystem, handleChange, name, showCheck
     );
 }
 
-const PruneUnusedImagesModal = ({ close, unusedImages, onAddNotification, userServiceAvailable, systemServiceAvailable }) => {
+const PruneUnusedImagesModal = ({ close, unusedImages, onAddNotification }) => {
     const [isPruning, setPruning] = useState(false);
-    const [deleteUserImages, setDeleteUserImages] = useState(userServiceAvailable !== null && userServiceAvailable);
-    const [deleteSystemImages, setDeleteSystemImages] = useState(systemServiceAvailable);
+    const [deleteImages, setDeleteImages] = React.useState(true);
 
     const handlePruneUnusedImages = () => {
         setPruning(true);
 
-        const actions = [];
-        if (deleteUserImages) {
-            actions.push(client.pruneUnusedImages(false));
-        }
-        if (deleteSystemImages) {
-            actions.push(client.pruneUnusedImages(true));
-        }
-        Promise.all(actions).then(close)
+        client.pruneUnusedImages().then(close)
                 .catch(ex => {
                     const error = _("Failed to prune unused images");
                     onAddNotification({ type: 'danger', error, errorDetail: ex.message });
@@ -76,10 +68,7 @@ const PruneUnusedImagesModal = ({ close, unusedImages, onAddNotification, userSe
                 });
     };
 
-    const isSystem = systemServiceAvailable;
-    const userImages = unusedImages.filter(image => !image.isSystem);
-    const systemImages = unusedImages.filter(image => image.isSystem);
-    const showCheckboxes = userImages.length > 0 && systemImages.length > 0;
+    const showCheckboxes = unusedImages.length > 0;
 
     return (
         <Modal isOpen
@@ -90,7 +79,6 @@ const PruneUnusedImagesModal = ({ close, unusedImages, onAddNotification, userSe
                    <Button id="btn-img-delete" variant="danger"
                            spinnerAriaValueText={isPruning ? _("Pruning images") : undefined}
                            isLoading={isPruning}
-                           isDisabled={!deleteUserImages && !deleteSystemImages}
                            onClick={handlePruneUnusedImages}>
                        {isPruning ? _("Pruning images") : _("Prune")}
                    </Button>
@@ -98,22 +86,12 @@ const PruneUnusedImagesModal = ({ close, unusedImages, onAddNotification, userSe
                </>}
         >
             <Flex flex={{ default: 'column' }}>
-                {isSystem && <ImageOptions
-              images={systemImages}
-              name="deleteSystemImages"
-              checked={deleteSystemImages}
-              handleChange={setDeleteSystemImages}
-              showCheckbox={showCheckboxes}
-              isSystem
-                />
-                }
                 <ImageOptions
-              images={userImages}
-              name="deleteUserImages"
-              checked={deleteUserImages}
-              handleChange={setDeleteUserImages}
+              images={unusedImages}
+              name="deleteImages"
+              checked={deleteImages}
+              handleChange={setDeleteImages}
               showCheckbox={showCheckboxes}
-              isSystem={false}
                 />
             </Flex>
         </Modal>

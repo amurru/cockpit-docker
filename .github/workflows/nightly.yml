@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Clone repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Trigger updates-testing scenario
         run: |
@@ -19,4 +19,4 @@ jobs:
           mkdir -p ~/.config/cockpit-dev
           echo "${{ github.token }}" >> ~/.config/cockpit-dev/github-token
           TEST_OS=$(PYTHONPATH=bots python3 -c 'from lib.constants import TEST_OS_DEFAULT; print(TEST_OS_DEFAULT)')
-          bots/tests-trigger --force "-" "${TEST_OS}/updates-testing" "${TEST_OS}/podman-next"
+          bots/tests-trigger --force "-" "${TEST_OS}/updates-testing" "${TEST_OS}/docker-next"

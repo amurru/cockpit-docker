@@ -25,6 +25,7 @@ import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox";
 import { EmptyState, EmptyStateHeader, EmptyStateFooter, EmptyStateIcon, EmptyStateActions, EmptyStateVariant } from "@patternfly/react-core/dist/esm/components/EmptyState";
 import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack";
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner";
 import { WithDialogs } from "dialogs.jsx";
 
 import cockpit from 'cockpit';
@@ -41,20 +42,14 @@ class Application extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            systemServiceAvailable: null,
-            userServiceAvailable: null,
+            serviceAvailable: null,
             enableService: true,
             images: null,
-            userImagesLoaded: false,
-            systemImagesLoaded: false,
+            imagesLoaded: false,
             containers: null,
             containersFilter: "all",
             containersStats: {},
-            userContainersLoaded: null,
-            systemContainersLoaded: null,
-            userPodsLoaded: null,
-            systemPodsLoaded: null,
-            userServiceExists: false,
+            containersLoaded: null,
             textFilter: "",
             ownerFilter: "all",
             dropDownValue: 'Everything',
@@ -63,24 +58,21 @@ class Application extends React.Component {
             version: '1.3.0',
             selinuxAvailable: false,
             dockerRestartAvailable: false,
-            userDockerRestartAvailable: false,
             currentUser: _("User"),
-            userLingeringEnabled: null,
             privileged: false,
+            hasDockerGroup: false,
             location: {},
         };
         this.onAddNotification = this.onAddNotification.bind(this);
         this.onDismissNotification = this.onDismissNotification.bind(this);
         this.onFilterChanged = this.onFilterChanged.bind(this);
-        this.onOwnerChanged = this.onOwnerChanged.bind(this);
         this.onContainerFilterChanged = this.onContainerFilterChanged.bind(this);
         this.updateContainer = this.updateContainer.bind(this);
         this.startService = this.startService.bind(this);
         this.goToServicePage = this.goToServicePage.bind(this);
-        this.checkUserService = this.checkUserService.bind(this);
         this.onNavigate = this.onNavigate.bind(this);
 
-        this.pendingUpdateContainer = {}; // id+system → promise
+        this.pendingUpdateContainer = {}; // id → promise
     }
 
     onAddNotification(notification) {
@@ -122,20 +114,6 @@ class Application extends React.Component {
         }
     }
 
-    onOwnerChanged(value) {
-        this.setState({
-            ownerFilter: value
-        });
-
-        const options = this.state.location;
-        if (value == "all") {
-            delete options.owner;
-            this.updateUrl(Object.assign(options));
-        } else {
-            this.updateUrl(Object.assign(options, { owner: value }));
-        }
-    }
-
     onContainerFilterChanged(value) {
         this.setState({
             containersFilter: value
@@ -158,8 +136,8 @@ class Application extends React.Component {
         });
     }
 
-    updateContainerStats(id, system) {
-        client.streamContainerStats(system, id, reply => {
+    updateContainerStats(id) {
+        client.streamContainerStats(id, reply => {
             if (reply.Error != null) // executed when container stop
                 console.warn("Failed to update container stats:", JSON.stringify(reply.message));
             else {
@@ -173,53 +151,41 @@ class Application extends React.Component {
         });
     }
 
-    initContainers(system) {
-        return client.getContainers(system)
+    initContainers() {
+        return client.getContainers()
                 .then(containerList => Promise.all(
-                    containerList.map(container => client.inspectContainer(system, container.Id))
+                    containerList.map(container => client.inspectContainer(container.Id))
                 ))
                 .then(containerDetails => {
                     this.setState(prevState => {
-                        // keep/copy the containers for !system
-                        const copyContainers = {};
-                        Object.entries(prevState.containers || {}).forEach(([id, container]) => {
-                            if (container.isSystem !== system)
-                                copyContainers[id] = container;
-                        });
+                        const copyContainers = prevState.containers || {};
                         for (const detail of containerDetails) {
-                            detail.isSystem = system;
                             copyContainers[detail.Id] = detail;
+                            this.updateContainerStats(detail.Id);
                         }
 
                         return {
                             containers: copyContainers,
-                            [system ? "systemContainersLoaded" : "userContainersLoaded"]: true,
+                            containersLoaded: true,
                         };
                     });
-                    this.updateContainerStats(system);
                 })
                 .catch(console.log);
     }
 
-    updateImages(system) {
-        client.getImages(system)
+    updateImages() {
+        client.getImages()
                 .then(reply => {
                     this.setState(prevState => {
                         // Copy only images that could not be deleted with this event
-                        // So when event from system come, only copy user images and vice versa
-                        const copyImages = {};
-                        Object.entries(prevState.images || {}).forEach(([Id, image]) => {
-                            if (image.isSystem !== system)
-                                copyImages[Id] = image;
-                        });
+                        const copyImages = prevState.images || {};
                         Object.entries(reply).forEach(([Id, image]) => {
-                            image.isSystem = system;
                             copyImages[Id] = image;
                         });
 
                         return {
                             images: copyImages,
-                            [system ? "systemImagesLoaded" : "userImagesLoaded"]: true
+                            imagesLoaded: true
                         };
                     });
                 })
@@ -228,41 +194,14 @@ class Application extends React.Component {
                 });
     }
 
-    // updatePods(system) {
-    //     return client.getPods(system)
-    //             .then(reply => {
-    //                 this.setState(prevState => {
-    //                     // Copy only pods that could not be deleted with this event
-    //                     // So when event from system come, only copy user pods and vice versa
-    //                     const copyPods = {};
-    //                     Object.entries(prevState.pods || {}).forEach(([id, pod]) => {
-    //                         if (pod.isSystem !== system)
-    //                             copyPods[id] = pod;
-    //                     });
-    //                     for (const pod of reply || []) {
-    //                         pod.isSystem = system;
-    //                         copyPods[pod.Id + system.toString()] = pod;
-    //                     }
-    //                     return {
-    //                         pods: copyPods,
-    //                         [system ? "systemPodsLoaded" : "userPodsLoaded"]: true,
-    //                     };
-    //                 });
-    //             })
-    //             .catch(ex => {
-    //                 console.warn("Failed to do Update Pods:", JSON.stringify(ex));
-    //             });
-    // }
-
-    updateContainer(id, system, event) {
+    updateContainer(id, event) {
         /* when firing off multiple calls in parallel, docker can return them in a random order.
          * This messes up the state. So we need to serialize them for a particular container. */
         const idx = id;
         const wait = this.pendingUpdateContainer[idx] ?? Promise.resolve();
 
-        const new_wait = wait.then(() => client.inspectContainer(system, id))
+        const new_wait = wait.then(() => client.inspectContainer(id))
                 .then(details => {
-                    details.isSystem = system;
                     // HACK: during restart State never changes from "running"
                     //       override it to reconnect console after restart
                     if (event?.Action === "restart")
@@ -276,40 +215,25 @@ class Application extends React.Component {
         return new_wait;
     }
 
-    updateImage(id, system) {
-        client.getImages(system, id)
+    updateImage(id) {
+        client.getImages(id)
                 .then(reply => {
-                    const immage = reply[id];
-                    immage.isSystem = system;
-                    this.updateState("images", id, immage);
+                    const image = reply[id];
+                    this.updateState("images", id, image);
                 })
                 .catch(ex => {
                     console.warn("Failed to do Update Image:", JSON.stringify(ex));
                 });
     }
 
-    // updatePod(id, system) {
-    //     return client.getPods(system, id)
-    //             .then(reply => {
-    //                 if (reply && reply.length > 0) {
-    //                     reply = reply[0];
-    //                     reply.isSystem = system;
-    //                     this.updateState("pods", reply.Id, reply);
-    //                 }
-    //             })
-    //             .catch(ex => {
-    //                 console.warn("Failed to do Update Pod:", JSON.stringify(ex));
-    //             });
-    // }
-
     // see https://docs.podman.io/en/latest/markdown/podman-events.1.html
 
-    handleImageEvent(event, system) {
+    handleImageEvent(event) {
         switch (event.Action) {
         case 'push':
         case 'save':
         case 'tag':
-            this.updateImage(event.Actor.ID, system);
+            this.updateImage(event.Actor.ID);
             break;
         case 'pull': // Pull event has not event.id
         case 'untag':
@@ -317,14 +241,14 @@ class Application extends React.Component {
         case 'remove':
         case 'prune':
         case 'build':
-            this.updateImages(system);
+            this.updateImages();
             break;
         default:
-            console.warn('Unhandled event type', event.Type, event.Action);
+            console.warn('Unhandled event type ', event.Type, event.Action);
         }
     }
 
-    handleContainerEvent(event, system) {
+    handleContainerEvent(event) {
         if (event.Action.includes(':'))
             event.Action = event.Action.split(':')[0];
         const id = event.Actor.ID;
@@ -351,7 +275,7 @@ class Application extends React.Component {
          */
         case 'exec_start':
         case 'start':
-            this.updateContainer(id, system, event);
+            this.updateContainer(id, event);
             break;
         case 'checkpoint':
         case 'cleanup':
@@ -367,7 +291,7 @@ class Application extends React.Component {
         case 'stop':
         case 'unpause':
         case 'rename': // rename event is available starting podman v4.1; until then the container does not get refreshed after renaming
-            this.updateContainer(id, system, event);
+            this.updateContainer(id, event);
             break;
 
         case 'remove':
@@ -382,128 +306,87 @@ class Application extends React.Component {
 
         // only needs to update the Image list, this ought to be an image event
         case 'commit':
-            this.updateImages(system);
+            this.updateImages();
             break;
         default:
-            console.warn('Unhandled event type', event.Type, event.Action);
+            console.warn('Unhandled event type ', event.Type, event.Action);
         }
     }
 
-    // handlePodEvent(event, system) {
-    //     switch (event.Action) {
-    //     case 'create':
-    //     case 'kill':
-    //     case 'pause':
-    //     case 'start':
-    //     case 'stop':
-    //     case 'unpause':
-    //         this.updatePod(event.Actor.ID, system);
-    //         break;
-    //     case 'remove':
-    //         this.setState(prevState => {
-    //             const pods = { ...prevState.pods };
-    //             delete pods[event.Actor.ID + system.toString()];
-    //             return { pods };
-    //         });
-    //         break;
-    //     default:
-    //         console.warn('Unhandled event type ', event.Type, event.Action);
-    //     }
-    // }
-
-    handleEvent(event, system) {
+    handleEvent(event) {
         switch (event.Type) {
         case 'container':
-            this.handleContainerEvent(event, system);
+            this.handleContainerEvent(event);
             break;
         case 'image':
-            this.handleImageEvent(event, system);
-            break;
-        // case 'pod':
-        //     this.handlePodEvent(event, system);
-        //     break;
-        case 'volume':
-        case 'network':
+            this.handleImageEvent(event);
             break;
         default:
-            console.warn('Unhandled event type', event.Type);
+            console.warn('Unhandled event type ', event.Type);
         }
     }
 
-    cleanupAfterService(system, key) {
-        ["images", "containers", "pods"].forEach(t => {
+    cleanupAfterService(key) {
+        ["images", "containers"].forEach(t => {
             if (this.state[t])
                 this.setState(prevState => {
                     const copy = {};
                     Object.entries(prevState[t] || {}).forEach(([id, v]) => {
-                        if (v.isSystem !== system)
-                            copy[id] = v;
+                        copy[id] = v;
                     });
                     return { [t]: copy };
                 });
         });
     }
 
-    init(system) {
-        client.getInfo(system)
+    init() {
+        client.getInfo()
                 .then(reply => {
                     this.setState({
-                        systemServiceAvailable: true,
+                        serviceAvailable: true,
                         version: reply.ServerVersion,
                         registries: reply.RegistryConfig.IndexConfigs,
                         cgroupVersion: reply.CgroupVersion,
                     });
-                    this.updateImages(system);
-                    this.initContainers(system);
-                    // this.updatePods(system);
-                    client.streamEvents(system,
-                                        message => this.handleEvent(message, system))
+                    this.updateImages();
+                    this.initContainers();
+                    client.streamEvents(message => this.handleEvent(message))
                             .then(() => {
-                                this.setState({ systemServiceAvailable: false });
-                                this.cleanupAfterService(system);
+                                this.setState({ serviceAvailable: false });
+                                this.cleanupAfterService();
                             })
                             .catch(e => {
                                 console.log(e);
-                                this.setState({ systemServiceAvailable: false });
-                                this.cleanupAfterService(system);
+                                this.setState({ serviceAvailable: false });
+                                this.cleanupAfterService();
                             });
 
                     // Listen if docker is still running
-                    const ch = cockpit.channel({ superuser: system ? "require" : null, payload: "stream", unix: client.getAddress(system) });
+                    const ch = cockpit.channel({ payload: "stream", unix: client.getAddress() });
                     ch.addEventListener("close", () => {
-                        this.setState({ systemServiceAvailable: false });
-                        this.cleanupAfterService(system);
+                        this.setState({ serviceAvailable: false });
+                        this.cleanupAfterService();
                     });
 
                     ch.send("GET " + client.VERSION + "/events HTTP/1.0\r\nContent-Length: 0\r\n\r\n");
                 })
-                .catch((error) => {
-                    console.log(error);
+                .catch((r) => {
+                    console.log("Failed to get info from docker", r);
                     this.setState({
-                        systemServiceAvailable: false,
-                        systemContainersLoaded: true,
-                        systemImagesLoaded: true,
-                        systemPodsLoaded: true
+                        serviceAvailable: false,
+                        containersLoaded: true,
+                        imagesLoaded: true
                     });
                 });
     }
 
     componentDidMount() {
-        this.init(true);
-        cockpit.script("[ `id -u` -eq 0 ] || [ `id -nG | grep -qw docker; echo $?` -eq 0 ]")
-                .done(xrd => {
-                    const isRoot = !xrd || xrd.split("/").pop() == "root";
-                    if (!isRoot) {
-                        sessionStorage.setItem('XDG_RUNTIME_DIR', xrd.trim());
-                        this.init(false);
-                        this.checkUserService();
-                    } else {
-                        this.setState({
-                            userImagesLoaded: true,
-                            userContainersLoaded: true,
-                            userPodsLoaded: true,
-                            userServiceExists: false
-                        });
+        cockpit.script("[ `id -u` -eq 0 ] || [ `id -nG | grep -qw docker; echo $?` -eq 0 ]; echo $?")
+                .done(result => {
+                    const hasDockerGroup = result.trim() === "0";
+                    this.setState({ hasDockerGroup });
+                    if (hasDockerGroup) {
+                        this.init();
                     }
                 })
                 .fail(e => console.log("Could not read $XDG_RUNTIME_DIR: ", e.message));
@@ -511,23 +394,11 @@ class Application extends React.Component {
                 .then(() => this.setState({ selinuxAvailable: true }))
                 .catch(() => this.setState({ selinuxAvailable: false }));
 
-        cockpit.spawn(["systemctl", "show", "--value", "-p", "LoadState", "docker-restart"], { environ: ["LC_ALL=C"], error: "ignore" })
+        cockpit.spawn(["systemctl", "show", "--value", "-p", "LoadState", "docker"], { environ: ["LC_ALL=C"], error: "ignore" })
                 .then(out => this.setState({ dockerRestartAvailable: out.trim() === "loaded" }));
 
         superuser.addEventListener("changed", () => this.setState({ privileged: !!superuser.allowed }));
         this.setState({ privileged: superuser.allowed });
-
-        cockpit.user().then(user => {
-            this.setState({ currentUser: user.name || _("User") });
-            // HACK: https://github.com/systemd/systemd/issues/22244#issuecomment-1210357701
-            cockpit.file(`/var/lib/systemd/linger/${user.name}`).watch((content, tag) => {
-                if (content == null && tag === '-') {
-                    this.setState({ userLingeringEnabled: false });
-                } else {
-                    this.setState({ userLingeringEnabled: true });
-                }
-            });
-        });
 
         cockpit.addEventListener("locationchanged", this.onNavigate);
         this.onNavigate();
@@ -549,28 +420,8 @@ class Application extends React.Component {
                 if (options.container) {
                     this.onContainerFilterChanged(options.container);
                 }
-                const owners = ["user", "system", "all"];
-                if (owners.indexOf(options.owner) !== -1) {
-                    this.onOwnerChanged(options.owner);
-                }
             }
         });
-    }
-
-    checkUserService() {
-        const argv = ["systemctl", "--user", "is-enabled", "docker.socket"];
-
-        cockpit.spawn(["systemctl", "--user", "show", "--value", "-p", "LoadState", "docker-restart"], { environ: ["LC_ALL=C"], error: "ignore" })
-                .then(out => this.setState({ userDockerRestartAvailable: out.trim() === "loaded" }));
-
-        cockpit.spawn(argv, { environ: ["LC_ALL=C"], err: "out" })
-                .then(() => this.setState({ userServiceExists: true }))
-                .catch((_, response) => {
-                    if (response.trim() !== "disabled")
-                        this.setState({ userServiceExists: false });
-                    else
-                        this.setState({ userServiceExists: true });
-                });
     }
 
     startService(e) {
@@ -584,14 +435,14 @@ class Application extends React.Component {
             argv = ["systemctl", "start", "docker.socket"];
 
         cockpit.spawn(argv, { superuser: "require", err: "message" })
-                .then(() => this.init(true))
+                .then(() => this.init())
                 .catch(err => {
                     this.setState({
-                        systemServiceAvailable: false,
-                        systemContainersLoaded: true,
-                        systemImagesLoaded: true
+                        serviceAvailable: false,
+                        containersLoaded: true,
+                        imagesLoaded: true
                     });
-                    console.warn("Failed to start system docker.socket:", JSON.stringify(err));
+                    console.warn("Failed to start docker.socket:", JSON.stringify(err));
                 });
     }
 
@@ -602,15 +453,42 @@ class Application extends React.Component {
     }
 
     render() {
-        if (this.state.systemServiceAvailable === null && this.state.userServiceAvailable === null) // not detected yet
-            return null;
-
-        if (!this.state.systemServiceAvailable && !this.state.userServiceAvailable) {
+        if (!this.state.hasDockerGroup) {
             return (
                 <Page>
                     <PageSection variant={PageSectionVariants.light}>
                         <EmptyState variant={EmptyStateVariant.full}>
-                            <EmptyStateHeader titleText={_("docker service is not active")} icon={<EmptyStateIcon icon={ExclamationCircleIcon} />} headingLevel="h2" />
+                            <EmptyStateHeader titleText={_("You are not a member of the docker group")} icon={<EmptyStateIcon icon={ExclamationCircleIcon} />} headingLevel="h2" />
+                            <EmptyStateFooter>
+                                <Button onClick={() => cockpit.jump("/users")}>
+                                    {_("Manage users")}
+                                </Button>
+                            </EmptyStateFooter>
+                        </EmptyState>
+                    </PageSection>
+                </Page>
+            );
+        }
+
+        if (this.state.serviceAvailable === null) // not detected yet
+            return (
+                <Page>
+                    <PageSection variant={PageSectionVariants.light}>
+                        <EmptyState variant={EmptyStateVariant.full}>
+                            {/* loading spinner */}
+                            <Spinner size="xl" />
+                            <EmptyStateHeader titleText={_("Loading...")} />
+                        </EmptyState>
+                    </PageSection>
+                </Page>
+            );
+
+        if (!this.state.serviceAvailable) {
+            return (
+                <Page>
+                    <PageSection variant={PageSectionVariants.light}>
+                        <EmptyState variant={EmptyStateVariant.full}>
+                            <EmptyStateHeader titleText={_("Docker service is not active")} icon={<EmptyStateIcon icon={ExclamationCircleIcon} />} headingLevel="h2" />
                             <EmptyStateFooter>
                                 <Checkbox isChecked={this.state.enableService}
                                       id="enable"
@@ -660,17 +538,10 @@ class Application extends React.Component {
                 <AlertActionCloseButton onClose={() => this.setState({ showStartService: false })} />
             </>
         );
-        if (!this.state.systemServiceAvailable && this.state.privileged) {
+        if (!this.state.serviceAvailable && this.state.privileged) {
             startService = (
-                <Alert variant='default'
-                title={_("System docker service is also available")}
-                actionClose={action} />
-            );
-        }
-        if (!this.state.userServiceAvailable && this.state.userServiceExists) {
-            startService = (
-                <Alert variant='default'
-                title={_("User docker service is also available")}
+                <Alert
+                title={_("Docker service is available")}
                 actionClose={action} />
             );
         }
@@ -678,24 +549,22 @@ class Application extends React.Component {
         const imageList = (
             <Images
                 key="imageList"
-                images={this.state.systemImagesLoaded && this.state.userImagesLoaded ? this.state.images : null}
+                images={this.state.imagesLoaded ? this.state.images : null}
                 imageContainerList={imageContainerList}
                 onAddNotification={this.onAddNotification}
                 textFilter={this.state.textFilter}
                 ownerFilter={this.state.ownerFilter}
                 showAll={ () => this.setState({ containersFilter: "all" }) }
                 user={this.state.currentUser}
-                userServiceAvailable={this.state.userServiceAvailable}
-                systemServiceAvailable={this.state.systemServiceAvailable}
+                serviceAvailable={this.state.serviceAvailable}
             />
         );
         const containerList = (
             <Containers
                 key="containerList"
                 version={this.state.version}
-                images={this.state.systemImagesLoaded && this.state.userImagesLoaded ? this.state.images : null}
-                containers={this.state.systemContainersLoaded && this.state.userContainersLoaded ? this.state.containers : null}
-                pods={this.state.systemPodsLoaded && this.state.userPodsLoaded ? this.state.pods : null}
+                images={this.state.imagesLoaded ? this.state.images : null}
+                containers={this.state.containersLoaded ? this.state.containers : null}
                 containersStats={this.state.containersStats}
                 filter={this.state.containersFilter}
                 handleFilterChange={this.onContainerFilterChanged}
@@ -703,8 +572,7 @@ class Application extends React.Component {
                 ownerFilter={this.state.ownerFilter}
                 user={this.state.currentUser}
                 onAddNotification={this.onAddNotification}
-                userServiceAvailable={this.state.userServiceAvailable}
-                systemServiceAvailable={this.state.systemServiceAvailable}
+                serviceAvailable={this.state.serviceAvailable}
                 cgroupVersion={this.state.cgroupVersion}
                 updateContainer={this.updateContainer}
             />
@@ -729,8 +597,6 @@ class Application extends React.Component {
             registries: this.state.registries,
             selinuxAvailable: this.state.selinuxAvailable,
             dockerRestartAvailable: this.state.dockerRestartAvailable,
-            userDockerRestartAvailable: this.state.userDockerRestartAvailable,
-            userLingeringEnabled: this.state.userLingeringEnabled,
             version: this.state.version,
         };
 
@@ -743,11 +609,8 @@ class Application extends React.Component {
                           variant={PageSectionVariants.light}>
                             <ContainerHeader
                               handleFilterChanged={this.onFilterChanged}
-                              handleOwnerChanged={this.onOwnerChanged}
                               ownerFilter={this.state.ownerFilter}
                               textFilter={this.state.textFilter}
-                              twoOwners={this.state.systemServiceAvailable && this.state.userServiceAvailable}
-                              user={this.state.currentUser}
                             />
                         </PageSection>
                         <PageSection className='ct-pagesection-mobile'>

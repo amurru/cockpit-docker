@@ -21,7 +21,7 @@ const ContainerRestoreModal = ({ containerWillRestore, onAddNotification }) => {
 
     const handleRestoreContainer = () => {
         setInProgress(true);
-        client.postContainer(containerWillRestore.isSystem, "restore", containerWillRestore.Id, {
+        client.postContainer("restore", containerWillRestore.Id, {
             keep,
             tcpEstablished,
             ignoreStaticIP,

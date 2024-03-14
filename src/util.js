@@ -22,14 +22,11 @@ export const WithDockerInfo = ({ value, children }) => {
 // "Restarting" comes from special handling of restart case in Application.updateContainer()
 export const states = [_("Exited"), _("Paused"), _("Stopped"), _("Removing"), _("Configured"), _("Created"), _("Restart"), _("Running")];
 
-// https://github.com/containers/docker/blob/main//define/podstate.go
-export const podStates = [_("Created"), _("Running"), _("Stopped"), _("Paused"), _("Exited"), _("Error")];
-
 export const fallbackRegistries = ["docker.io", "quay.io"];
 
-export function debug(system, ...args) {
+export function debug(...args) {
     if (window.debugging === "all" || window.debugging?.includes("docker"))
-        console.debug("docker", system ? "system" : "user", ...args);
+        console.debug("docker", ...args);
 }
 
 export function truncate_id(id) {
@@ -67,7 +64,7 @@ export function format_cpu_usage(stats) {
             cpu_percent = (cpu_delta / system_delta) * stats.cpu_stats.online_cpus * 100;
     }
 
-    return cpu_percent.toFixed(2) + "%";
+    return [cpu_percent.toFixed(2) + "%", cpu_percent];
 }
 
 export function format_memory_and_limit(stats) {
@@ -89,11 +86,11 @@ export function format_memory_and_limit(stats) {
     if (usage) {
         parts = cockpit.format_bytes(usage, units, true);
         if (mtext)
-            return _(parts[0] + mtext);
+            return [_(parts[0] + mtext), usage];
         else
-            return _(parts.join(" "));
+            return [_(parts.join(" ")), usage];
     } else {
-        return "";
+        return ["", -1];
     }
 }
 

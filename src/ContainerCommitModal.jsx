@@ -39,7 +39,7 @@ const ContainerCommitModal = ({ container, localImages }) => {
         if (full_name.indexOf("/") < 0)
             full_name = "localhost/" + full_name;
 
-        if (!force && localImages.some(image => image.isSystem === container.isSystem && image.Name === full_name)) {
+        if (!force && localImages.some(image => image.Name === full_name)) {
             setNameError(_("Image name is not unique"));
             return;
         }
@@ -72,7 +72,7 @@ const ContainerCommitModal = ({ container, localImages }) => {
         setNameError("");
         setDialogError("");
         setDialogErrorDetail("");
-        client.commitContainer(container.isSystem, commitData)
+        client.commitContainer(commitData)
                 .then(() => Dialogs.close())
                 .catch(ex => {
                     setDialogError(cockpit.format(_("Failed to commit container $0"), container.Name));

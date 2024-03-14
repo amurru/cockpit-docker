@@ -107,7 +107,7 @@ class ContainerLogs extends React.Component {
         }
         this.resize(this.props.width);
 
-        const connection = rest.connect(client.getAddress(this.props.system), this.props.system);
+        const connection = rest.connect(client.getAddress());
         const options = {
             method: "GET",
             path: client.VERSION + "/containers/" + this.props.containerId + "/logs",
@@ -120,7 +120,7 @@ class ContainerLogs extends React.Component {
             },
         };
 
-        connection.monitor(options, this.onStreamMessage, this.props.system, true)
+        connection.monitor(options, this.onStreamMessage, true)
                 .then(this.onStreamClose)
                 .catch(e => {
                     const error = JSON.parse(new TextDecoder().decode(e.message));
@@ -168,7 +168,6 @@ class ContainerLogs extends React.Component {
 
 ContainerLogs.propTypes = {
     containerId: PropTypes.string.isRequired,
-    system: PropTypes.bool.isRequired,
     width: PropTypes.number.isRequired
 };
 
