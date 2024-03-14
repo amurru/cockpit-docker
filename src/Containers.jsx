@@ -39,15 +39,16 @@ const _ = cockpit.gettext;
 const ContainerActions = ({ container, healthcheck, onAddNotification, localImages, updateContainer }) => {
     const Dialogs = useDialogs();
     const { version } = utils.useDockerInfo();
-    const isRunning = container.State.Status == "running";
+    const isRunning = container.State.Status === "running";
     const isPaused = container.State.Status === "paused";
+    const isRestarting = container.State.Status === "restarting";
 
     const deleteContainer = (event) => {
         if (container.State.Status == "running") {
             const handleForceRemoveContainer = () => {
                 const id = container ? container.Id : "";
 
-                return client.delContainer(true, id, true)
+                return client.delContainer(id, true)
                         .catch(ex => {
                             const error = cockpit.format(_("Failed to force remove container $0"), container.Name); // not-covered: OS error
                             onAddNotification({ type: 'danger', error, errorDetail: ex.message });
@@ -72,7 +73,7 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
 
         if (force)
             args.t = 0;
-        client.postContainer(true, "stop", container.Id, args)
+        client.postContainer("stop", container.Id, args)
                 .catch(ex => {
                     const error = cockpit.format(_("Failed to stop container $0"), container.Name); // not-covered: OS error
                     onAddNotification({ type: 'danger', error, errorDetail: ex.message });
@@ -80,7 +81,7 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
     };
 
     const startContainer = () => {
-        client.postContainer(true, "start", container.Id, {})
+        client.postContainer("start", container.Id, {})
                 .catch(ex => {
                     const error = cockpit.format(_("Failed to start container $0"), container.Name); // not-covered: OS error
                     onAddNotification({ type: 'danger', error, errorDetail: ex.message });
@@ -88,7 +89,7 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
     };
 
     const resumeContainer = () => {
-        client.postContainer(true, "unpause", container.Id, {})
+        client.postContainer("unpause", container.Id, {})
                 .catch(ex => {
                     const error = cockpit.format(_("Failed to resume container $0"), container.Name); // not-covered: OS error
                     onAddNotification({ type: 'danger', error, errorDetail: ex.message });
@@ -96,7 +97,7 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
     };
 
     const pauseContainer = () => {
-        client.postContainer(true, "pause", container.Id, {})
+        client.postContainer("pause", container.Id, {})
                 .catch(ex => {
                     const error = cockpit.format(_("Failed to pause container $0"), container.Name); // not-covered: OS error
                     onAddNotification({ type: 'danger', error, errorDetail: ex.message });
@@ -113,7 +114,7 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
 
         if (force)
             args.t = 0;
-        client.postContainer(true, "restart", container.Id, args)
+        client.postContainer("restart", container.Id, args)
                 .catch(ex => {
                     const error = cockpit.format(_("Failed to restart container $0"), container.Name); // not-covered: OS error
                     onAddNotification({ type: 'danger', error, errorDetail: ex.message });
@@ -138,7 +139,7 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
     };
 
     const actions = [];
-    if (isRunning || isPaused) {
+    if (isRunning || isPaused || isRestarting) {
         actions.push(
             <DropdownItem key="stop"
                           onClick={() => stopContainer()}>
@@ -182,12 +183,12 @@ const ContainerActions = ({ container, healthcheck, onAddNotification, localImag
                 {_("Start")}
             </DropdownItem>
         );
-        actions.push(<Divider key="separator-1" />);
+        actions.push(<Divider key="separator-0" />);
         if (version.localeCompare("3", undefined, { numeric: true, sensitivity: 'base' }) >= 0) {
             addRenameAction();
         }
     } else { // running or paused
-        actions.push(<Divider key="separator-1" />);
+        actions.push(<Divider key="separator-0" />);
         if (version.localeCompare("3.0.1", undefined, { numeric: true, sensitivity: 'base' }) >= 0) {
             addRenameAction();
         }
@@ -283,7 +284,10 @@ class Containers extends React.Component {
 
     renderRow(containersStats, container, localImages) {
         const containerStats = containersStats[container.Id];
-        console.log(containerStats);
+        // if (containerStats?.name === "/build-jaeger-1") {
+        //     console.log(container);
+        //     console.log(containerStats);
+        // }
         const image = container.Config?.Image || container.Image;
         const isToolboxContainer = container.Config?.Labels?.["com.github.containers.toolbox"] === "true";
         const isDistroboxContainer = container.Config?.Labels?.manager === "distrobox";
@@ -293,16 +297,17 @@ class Containers extends React.Component {
         const healthcheck = container.State?.Health?.Status ?? container.State?.Healthcheck?.Status; // not-covered: only on old version
         const status = container.State?.Status ?? ""; // not-covered: race condition
 
-        let proc = "";
-        let mem = "";
-        if (this.props.cgroupVersion == 'v1' && status == 'running') { // not-covered: only on old version
-            proc = <div><abbr title={_("not available")}>{_("n/a")}</abbr></div>;
-            mem = <div><abbr title={_("not available")}>{_("n/a")}</abbr></div>;
+        let proc_text = "";
+        let mem_text = "";
+        let proc = 0;
+        let mem = 0;
+        if (this.props.cgroupVersion === 'v1' && status === 'running') { // not-covered: only on old version
+            proc_text = <div><abbr title={_("not available")}>{_("n/a")}</abbr></div>;
+            mem_text = <div><abbr title={_("not available")}>{_("n/a")}</abbr></div>;
         }
-        if (containerStats && container.State === "running") {
-            // console.log(containerStats);
-            proc = utils.format_cpu_usage(containerStats);
-            mem = utils.format_memory_and_limit(containerStats);
+        if (containerStats && status === "running") {
+            [proc_text, proc] = utils.format_cpu_usage(containerStats);
+            [mem_text, mem] = utils.format_memory_and_limit(containerStats);
         }
 
         const info_block = (
@@ -332,8 +337,8 @@ class Containers extends React.Component {
 
         const columns = [
             { title: info_block, sortKey: container.Name },
-            { title: proc, props: { modifier: "nowrap" }, sortKey: containerState === "Running" ? containerStats?.CPU ?? -1 : -1 },
-            { title: mem, props: { modifier: "nowrap" }, sortKey: containerStats?.MemUsage ?? -1 },
+            { title: proc_text, props: { modifier: "nowrap" }, sortKey: containerState === "Running" ? proc ?? -1 : -1 },
+            { title: mem_text, props: { modifier: "nowrap" }, sortKey: mem ?? -1 },
             { title: <LabelGroup isVertical>{state}</LabelGroup>, sortKey: containerState },
         ];
 
@@ -372,7 +377,7 @@ class Containers extends React.Component {
                 tabs.push({
                     name: _("Console"),
                     renderer: ContainerTerminal,
-                    data: { containerId: container.Id, containerStatus: container.State.Status, width: this.state.width, tty }
+                    data: { containerId: container.Id, containerStatus: container.State?.Status, width: this.state.width, tty }
                 });
             }
         }
@@ -422,11 +427,11 @@ class Containers extends React.Component {
             emptyCaption = _("Loading...");
         else if (this.props.textFilter.length > 0)
             emptyCaption = _("No containers that match the current filter");
-        else if (this.props.filter == "running")
+        else if (this.props.filter === "running")
             emptyCaption = _("No running containers");
 
         if (this.props.containers !== null) {
-            filtered = Object.keys(this.props.containers).filter(id => !(this.props.filter == "running") || ["running", "restarting"].includes(this.props.containers[id].State));
+            filtered = Object.keys(this.props.containers).filter(id => !(this.props.filter === "running") || ["running", "restarting"].includes(this.props.containers[id].State?.Status));
 
             const getHealth = id => {
                 const state = this.props.containers[id]?.State;

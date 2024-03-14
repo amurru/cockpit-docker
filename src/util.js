@@ -64,7 +64,7 @@ export function format_cpu_usage(stats) {
             cpu_percent = (cpu_delta / system_delta) * stats.cpu_stats.online_cpus * 100;
     }
 
-    return cpu_percent.toFixed(2) + "%";
+    return [cpu_percent.toFixed(2) + "%", cpu_percent];
 }
 
 export function format_memory_and_limit(stats) {
@@ -86,11 +86,11 @@ export function format_memory_and_limit(stats) {
     if (usage) {
         parts = cockpit.format_bytes(usage, units, true);
         if (mtext)
-            return _(parts[0] + mtext);
+            return [_(parts[0] + mtext), usage];
         else
-            return _(parts.join(" "));
+            return [_(parts.join(" ")), usage];
     } else {
-        return "";
+        return ["", -1];
     }
 }
 

@@ -197,9 +197,7 @@ export class ImageRunModal extends React.Component {
             if (this.state.restartPolicy === "on-failure" && this.state.restartTries !== null) {
                 createConfig.HostConfig.RestartPolicy.MaximumRetryCount = parseInt(this.state.restartTries);
             }
-            // Enable docker-restart.service for system containers, for user
-            // sessions enable-linger needs to be enabled for containers to start on boot.
-            if (this.state.restartPolicy === "always" && (this.props.dockerInfo.userLingeringEnabled || this.props.systemServiceAvailable)) {
+            if (this.state.restartPolicy === "always" && (this.props.serviceAvailable)) {
                 this.enableDockerRestartService();
             }
         }
@@ -356,7 +354,7 @@ export class ImageRunModal extends React.Component {
             this.activeConnection.close();
 
         this.setState({ searchFinished: false, searchInProgress: true });
-        this.activeConnection = rest.connect(client.getAddress(this.isSystem()), this.isSystem());
+        this.activeConnection = rest.connect(client.getAddress());
         let searches = [];
 
         // If there are registries configured search in them, or if a user searches for `docker.io/cockpit` let
@@ -567,11 +565,11 @@ export class ImageRunModal extends React.Component {
     };
 
     enableDockerRestartService = () => {
-        const argv = ["systemctl", "enable", "docker-restart.service"];
+        const argv = ["systemctl", "enable", "docker.service"];
 
         cockpit.spawn(argv, { superuser: "require", err: "message" })
                 .catch(err => {
-                    console.warn("Failed to start docker-restart.service:", JSON.stringify(err));
+                    console.warn("Failed to enable docker.service:", JSON.stringify(err));
                 });
     };
 
@@ -667,7 +665,7 @@ export class ImageRunModal extends React.Component {
 
     render() {
         const Dialogs = this.props.dialogs;
-        const { registries, dockerRestartAvailable, userLingeringEnabled, userDockerRestartAvailable, selinuxAvailable, version } = this.props.dockerInfo;
+        const { registries, dockerRestartAvailable, selinuxAvailable, version } = this.props.dockerInfo;
         const { image } = this.props;
         const dialogValues = this.state;
         const { activeTabKey, selectedImage } = this.state;
@@ -868,14 +866,14 @@ export class ImageRunModal extends React.Component {
                                         onChange={ev => this.onValueChanged('cpuShares', parseInt(ev.target.value) < 2 ? 2 : ev.target.value)} />
                             </Flex>
                         </FormGroup>
-                        {((userLingeringEnabled && userDockerRestartAvailable) || (this.isSystem() && dockerRestartAvailable)) &&
+                        {(dockerRestartAvailable) &&
                         <Grid hasGutter md={6} sm={3}>
                             <GridItem>
                                 <FormGroup fieldId='run-image-dialog-restart-policy' label={_("Restart policy")}
                           labelIcon={
                               <Popover aria-label={_("Restart policy help")}
                                 enableFlip
-                                bodyContent={userLingeringEnabled ? _("Restart policy to follow when containers exit. Using linger for auto-starting containers may not work in some circumstances, such as when ecryptfs, systemd-homed, NFS, or 2FA are used on a user account.") : _("Restart policy to follow when containers exit.")}>
+                                bodyContent={_("Restart policy to follow when containers exit.")}>
                                   <button onClick={e => e.preventDefault()} className="pf-v5-c-form__group-label-help">
                                       <OutlinedQuestionCircleIcon />
                                   </button>

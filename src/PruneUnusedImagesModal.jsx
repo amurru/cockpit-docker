@@ -92,7 +92,6 @@ const PruneUnusedImagesModal = ({ close, unusedImages, onAddNotification }) => {
               checked={deleteImages}
               handleChange={setDeleteImages}
               showCheckbox={showCheckboxes}
-              isSystem={false}
                 />
             </Flex>
         </Modal>

@@ -1,10 +1,10 @@
 import rest from './rest.js';
 
-const DOCKER_SYSTEM_ADDRESS = "/var/run/docker.sock";
+const DOCKER_ADDRESS = "/var/run/docker.sock";
 export const VERSION = "/v1.43";
 
 export function getAddress() {
-    return DOCKER_SYSTEM_ADDRESS;
+    return DOCKER_ADDRESS;
 }
 
 function dockerCall(name, method, args, body) {
@@ -73,7 +73,7 @@ export const commitContainer = (commitData) => dockerCall("/commit", "POST", com
 
 export const postContainer = (action, id, args) => dockerCall("/containers/" + id + "/" + action, "POST", args);
 
-export function execContainer(system, id) {
+export function execContainer(id) {
     const args = {
         AttachStderr: true,
         AttachStdout: true,

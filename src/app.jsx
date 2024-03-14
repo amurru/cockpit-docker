@@ -25,6 +25,7 @@ import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox";
 import { EmptyState, EmptyStateHeader, EmptyStateFooter, EmptyStateIcon, EmptyStateActions, EmptyStateVariant } from "@patternfly/react-core/dist/esm/components/EmptyState";
 import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack";
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner";
 import { WithDialogs } from "dialogs.jsx";
 
 import cockpit from 'cockpit';
@@ -59,6 +60,7 @@ class Application extends React.Component {
             dockerRestartAvailable: false,
             currentUser: _("User"),
             privileged: false,
+            hasDockerGroup: false,
             location: {},
         };
         this.onAddNotification = this.onAddNotification.bind(this);
@@ -70,7 +72,7 @@ class Application extends React.Component {
         this.goToServicePage = this.goToServicePage.bind(this);
         this.onNavigate = this.onNavigate.bind(this);
 
-        this.pendingUpdateContainer = {}; // id+system → promise
+        this.pendingUpdateContainer = {}; // id → promise
     }
 
     onAddNotification(notification) {
@@ -156,11 +158,7 @@ class Application extends React.Component {
                 ))
                 .then(containerDetails => {
                     this.setState(prevState => {
-                        // keep/copy the containers for !system
-                        const copyContainers = {};
-                        Object.entries(prevState.containers || {}).forEach(([id, container]) => {
-                            copyContainers[id] = container;
-                        });
+                        const copyContainers = prevState.containers || {};
                         for (const detail of containerDetails) {
                             copyContainers[detail.Id] = detail;
                             this.updateContainerStats(detail.Id);
@@ -180,11 +178,7 @@ class Application extends React.Component {
                 .then(reply => {
                     this.setState(prevState => {
                         // Copy only images that could not be deleted with this event
-                        // So when event from system come, only copy user images and vice versa
-                        const copyImages = {};
-                        Object.entries(prevState.images || {}).forEach(([Id, image]) => {
-                            copyImages[Id] = image;
-                        });
+                        const copyImages = prevState.images || {};
                         Object.entries(reply).forEach(([Id, image]) => {
                             copyImages[Id] = image;
                         });
@@ -388,14 +382,10 @@ class Application extends React.Component {
 
     componentDidMount() {
         cockpit.script("[ `id -u` -eq 0 ] || [ `id -nG | grep -qw docker; echo $?` -eq 0 ]; echo $?")
-                .done(xrd => {
-                    // const isRoot = !xrd || xrd.split("/").pop() == "root";
-                    const hasDockerGroup = xrd.trim() === "0";
-                    if (!hasDockerGroup) {
-                        // sessionStorage.setItem('XDG_RUNTIME_DIR', xrd.trim());
-                        // this.init();
-                        // TODO: complain
-                    } else {
+                .done(result => {
+                    const hasDockerGroup = result.trim() === "0";
+                    this.setState({ hasDockerGroup });
+                    if (hasDockerGroup) {
                         this.init();
                     }
                 })
@@ -404,7 +394,7 @@ class Application extends React.Component {
                 .then(() => this.setState({ selinuxAvailable: true }))
                 .catch(() => this.setState({ selinuxAvailable: false }));
 
-        cockpit.spawn(["systemctl", "show", "--value", "-p", "LoadState", "docker-restart"], { environ: ["LC_ALL=C"], error: "ignore" })
+        cockpit.spawn(["systemctl", "show", "--value", "-p", "LoadState", "docker"], { environ: ["LC_ALL=C"], error: "ignore" })
                 .then(out => this.setState({ dockerRestartAvailable: out.trim() === "loaded" }));
 
         superuser.addEventListener("changed", () => this.setState({ privileged: !!superuser.allowed }));
@@ -452,7 +442,7 @@ class Application extends React.Component {
                         containersLoaded: true,
                         imagesLoaded: true
                     });
-                    console.warn("Failed to start system docker.socket:", JSON.stringify(err));
+                    console.warn("Failed to start docker.socket:", JSON.stringify(err));
                 });
     }
 
@@ -463,11 +453,30 @@ class Application extends React.Component {
     }
 
     render() {
+        if (!this.state.hasDockerGroup) {
+            return (
+                <Page>
+                    <PageSection variant={PageSectionVariants.light}>
+                        <EmptyState variant={EmptyStateVariant.full}>
+                            <EmptyStateHeader titleText={_("You are not a member of the docker group")} icon={<EmptyStateIcon icon={ExclamationCircleIcon} />} headingLevel="h2" />
+                            <EmptyStateFooter>
+                                <Button onClick={() => cockpit.jump("/users")}>
+                                    {_("Manage users")}
+                                </Button>
+                            </EmptyStateFooter>
+                        </EmptyState>
+                    </PageSection>
+                </Page>
+            );
+        }
+
         if (this.state.serviceAvailable === null) // not detected yet
             return (
                 <Page>
                     <PageSection variant={PageSectionVariants.light}>
                         <EmptyState variant={EmptyStateVariant.full}>
+                            {/* loading spinner */}
+                            <Spinner size="xl" />
                             <EmptyStateHeader titleText={_("Loading...")} />
                         </EmptyState>
                     </PageSection>

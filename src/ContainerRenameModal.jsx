@@ -15,7 +15,7 @@ const _ = cockpit.gettext;
 
 const ContainerRenameModal = ({ container, updateContainer }) => {
     const Dialogs = useDialogs();
-    const [name, setName] = useState(container.Name);
+    const [name, setName] = useState(container.Name.replace(/^\//, ""));
     const { version } = utils.useDockerInfo();
     const [nameError, setNameError] = useState(null);
     const [dialogError, setDialogError] = useState(null);

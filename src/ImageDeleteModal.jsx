@@ -44,7 +44,7 @@ export const ImageDeleteModal = ({ imageWillDelete, onAddNotification }) => {
     const handleRemoveImage = (tags, all) => {
         const handleForceRemoveImage = () => {
             Dialogs.close();
-            return client.delImage(imageWillDelete.isSystem, imageWillDelete.Id, true)
+            return client.delImage(imageWillDelete.Id, true)
                     .catch(ex => {
                         const error = cockpit.format(_("Failed to force remove image $0"), imageWillDelete.RepoTags[0]);
                         onAddNotification({ type: 'danger', error, errorDetail: ex.message });
@@ -54,7 +54,7 @@ export const ImageDeleteModal = ({ imageWillDelete, onAddNotification }) => {
 
         Dialogs.close();
         if (all)
-            client.delImage(imageWillDelete.isSystem, imageWillDelete.Id, false)
+            client.delImage(imageWillDelete.Id, false)
                     .catch(ex => {
                         Dialogs.show(<ForceRemoveModal name={isIntermediateImage ? _("intermediate image") : repoTags[0]}
                                                        handleForceRemove={handleForceRemoveImage}
@@ -64,7 +64,7 @@ export const ImageDeleteModal = ({ imageWillDelete, onAddNotification }) => {
             // Call another untag once previous one resolved. Calling all at once can result in undefined behavior
             const tag = tags.shift();
             const i = tag.lastIndexOf(":");
-            client.untagImage(imageWillDelete.isSystem, imageWillDelete.Id, tag.substring(0, i), tag.substring(i + 1, tag.length))
+            client.untagImage(imageWillDelete.Id, tag.substring(0, i), tag.substring(i + 1, tag.length))
                     .then(() => {
                         if (tags.length > 0)
                             handleRemoveImage(tags, all);

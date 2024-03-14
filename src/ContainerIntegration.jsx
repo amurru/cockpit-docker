@@ -34,9 +34,13 @@ export const renderContainerVolumes = (volumes) => {
         return null;
 
     const result = volumes.map(volume => {
+        let source = volume.Source;
+        if (volume.Source.includes(`docker/volumes/${volume.Name}`)) {
+            source = volume.Name;
+        }
         return (
             <ListItem key={volume.Source + volume.Destination}>
-                {volume.Source}
+                {source}
                 {volume.RW
                     ? <Tooltip content={_("Read-write access")}><span> &harr; </span></Tooltip>
                     : <Tooltip content={_("Read-only access")}><span> &rarr; </span></Tooltip>}

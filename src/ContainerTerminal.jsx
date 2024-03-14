@@ -109,7 +109,7 @@ class ContainerTerminal extends React.Component {
         const realWidth = this.term._core._renderService.dimensions.css.cell.width;
         const cols = Math.floor((width - padding) / realWidth);
         this.term.resize(cols, 24);
-        client.resizeContainersTTY( this.state.sessionId, this.props.tty, cols, 24)
+        client.resizeContainersTTY(this.state.sessionId, this.props.tty, cols, 24)
                 .catch(e => this.setState({ errorMessage: e.message }));
     }
 
@@ -176,12 +176,11 @@ class ContainerTerminal extends React.Component {
     }
 
     execAndConnect() {
-        client.execContainer( this.state.container)
+        client.execContainer(this.state.container)
                 .then(r => {
                     const channel = cockpit.channel({
                         payload: "stream",
                         unix: client.getAddress(),
-                        superuser: "require",
                         binary: true
                     });
 
@@ -201,7 +200,6 @@ class ContainerTerminal extends React.Component {
         const channel = cockpit.channel({
             payload: "stream",
             unix: client.getAddress(),
-            superuser: "require",
             binary: true
         });
 

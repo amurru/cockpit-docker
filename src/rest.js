@@ -89,7 +89,7 @@ async function call (address, parameters) {
     // } catch {
     //     p = result;
     // }
-    // console.log("call", { method: parameters.method, path: parameters.path, system, parameters, result: p });
+    // console.log("call", { method: parameters.method, path: parameters.path, parameters, result: p });
 
     return result;
 }
