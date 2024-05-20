@@ -39,6 +39,15 @@ You can also run `make rpm` to build RPMs for local installation.
 In `production` mode, source files are automatically minified and compressed.
 Set `NODE_ENV=production` if you want to duplicate this behavior.
 
+## Arch Derivatives
+[AUR package](https://aur.archlinux.org/packages/cockpit-docker)
+
+`yay -Ss cockpit-docker`
+
+OR for Manjaro 
+
+`pamac install cockpit-docker`
+
 # Development instructions
 
 See [HACKING.md](./HACKING.md) for details about how to efficiently change the
