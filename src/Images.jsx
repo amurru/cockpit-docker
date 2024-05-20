@@ -56,11 +56,9 @@ class Images extends React.Component {
                 .catch(ex => {
                     const error = cockpit.format(_("Failed to download image $0:$1"), imageName, imageTag || "latest");
                     const errorDetail = (
-                        <>
-                            <p> {_("Error message")}:
-                                <samp>{cockpit.format("$0 $1", ex.message, ex.reason)}</samp>
-                            </p>
-                        </>
+                        <p> {_("Error message")}:
+                            <samp>{cockpit.format("$0 $1", ex.message, ex.reason)}</samp>
+                        </p>
                     );
                     this.setState({ imageDownloadInProgress: undefined });
                     this.props.onAddNotification({ type: 'danger', error, errorDetail });
@@ -132,7 +130,7 @@ class Images extends React.Component {
             { title: utils.image_name(image), header: true, props: { modifier: "breakWord" } },
             { title: utils.localize_time(image.Created), props: { className: "ignore-pixels" } },
             { title: utils.truncate_id(image.Id), props: { className: "ignore-pixels" } },
-            { title: cockpit.format_bytes(image.Size, 1000), props: { className: "ignore-pixels", modifier: "nowrap" } },
+            { title: cockpit.format_bytes(image.Size), props: { className: "ignore-pixels", modifier: "nowrap" } },
             { title: <span className={usedByCount === 0 ? "ct-grey-text" : ""}>{usedByText}</span>, props: { className: "ignore-pixels", modifier: "nowrap" } },
             {
                 title: <ImageActions image={image} onAddNotification={this.props.onAddNotification} />,
@@ -244,11 +242,11 @@ class Images extends React.Component {
         const imageTitleStats = (
             <>
                 <Text component={TextVariants.h5}>
-                    {cockpit.format(cockpit.ngettext("$0 image total, $1", "$0 images total, $1", imageStats.imagesTotal), imageStats.imagesTotal, cockpit.format_bytes(imageStats.imagesSize, 1000))}
+                    {cockpit.format(cockpit.ngettext("$0 image total, $1", "$0 images total, $1", imageStats.imagesTotal), imageStats.imagesTotal, cockpit.format_bytes(imageStats.imagesSize))}
                 </Text>
                 {imageStats.unusedTotal !== 0 &&
                 <Text component={TextVariants.h5}>
-                    {cockpit.format(cockpit.ngettext("$0 unused image, $1", "$0 unused images, $1", imageStats.unusedTotal), imageStats.unusedTotal, cockpit.format_bytes(imageStats.unusedSize, 1000))}
+                    {cockpit.format(cockpit.ngettext("$0 unused image, $1", "$0 unused images, $1", imageStats.unusedTotal), imageStats.unusedTotal, cockpit.format_bytes(imageStats.unusedSize))}
                 </Text>
                 }
             </>

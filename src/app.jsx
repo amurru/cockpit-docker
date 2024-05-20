@@ -376,7 +376,7 @@ class Application extends React.Component {
                         this.init();
                     }
                 })
-                .fail(e => console.log("Could not read $XDG_RUNTIME_DIR: ", e.message));
+                .catch(e => console.log("Could not determine if user has docker group: ", e.message));
         cockpit.spawn("selinuxenabled", { error: "ignore" })
                 .then(() => this.setState({ selinuxAvailable: true }))
                 .catch(() => this.setState({ selinuxAvailable: false }));

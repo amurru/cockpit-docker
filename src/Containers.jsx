@@ -468,28 +468,27 @@ class Containers extends React.Component {
 
         // Convert to the search result output
         let localImages = null;
+        let nonIntermediateImages = null;
         if (this.props.images) {
-            localImages = Object.keys(this.props.images).reduce((images, id) => {
+            localImages = Object.keys(this.props.images).map(id => {
                 const img = this.props.images[id];
-                if (img.RepoTags && img.RepoTags.length > 0) {
-                    img.Index = img.RepoTags[0].split('/')[0];
-                    img.Name = img.RepoTags[0];
-                    img.toString = function imgToString() { return this.Name };
-                    images.push(img);
-                }
-                return images;
+                img.Index = img.RepoTags?.[0] ? img.RepoTags[0].split('/')[0] : "";
+                img.Name = utils.image_name(img);
+                img.toString = function imgToString() { return this.Name };
+                return img;
             }, []);
+            nonIntermediateImages = localImages.filter(img => img.Index !== "");
         }
 
-        const createContainer = () => {
-            if (localImages)
+        const createContainer = (inPod) => {
+            if (nonIntermediateImages)
                 Dialogs.show(
                     <utils.DockerInfoContext.Consumer>
                         {(dockerInfo) => (
                             <DialogsContext.Consumer>
                                 {(Dialogs) => (
                                     <ImageRunModal user={this.props.user}
-                                                              localImages={localImages}
+                                                              localImages={nonIntermediateImages}
                                                               serviceAvailable={this.props.serviceAvailable}
                                                               onAddNotification={this.props.onAddNotification}
                                                               dockerInfo={dockerInfo}
@@ -516,7 +515,7 @@ class Containers extends React.Component {
                     <ToolbarItem>
                         <Button variant="primary" key="get-new-image-action"
                                 id="containers-containers-create-container-btn"
-                                isDisabled={localImages === null}
+                                isDisabled={nonIntermediateImages === null}
                                 onClick={() => createContainer(null)}>
                             {_("Create container")}
                         </Button>

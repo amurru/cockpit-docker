@@ -22,9 +22,14 @@ Summary:        Cockpit component for docker containers
 License:        LGPL-2.1-or-later
 URL:            https://github.com/chabad360/cockpit-docker
 
-Source0:        https://github.com/cchabad360/%{name}/releases/download/%{version}/%{name}-%{version}.tar.xz
+Source0:        https://github.com/chabad360/%{name}/releases/download/%{version}/%{name}-%{version}.tar.xz
 BuildArch:      noarch
+%if 0%{?suse_version}
+# Suse's package has a different name
+BuildRequires:  appstream-glib
+%else
 BuildRequires:  libappstream-glib
+%endif
 BuildRequires:  make
 BuildRequires: gettext
 %if 0%{?rhel} && 0%{?rhel} <= 8
