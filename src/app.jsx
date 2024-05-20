@@ -177,14 +177,8 @@ class Application extends React.Component {
         client.getImages()
                 .then(reply => {
                     this.setState(prevState => {
-                        // Copy only images that could not be deleted with this event
-                        const copyImages = prevState.images || {};
-                        Object.entries(reply).forEach(([Id, image]) => {
-                            copyImages[Id] = image;
-                        });
-
                         return {
-                            images: copyImages,
+                            images: reply,
                             imagesLoaded: true
                         };
                     });
@@ -237,11 +231,18 @@ class Application extends React.Component {
             break;
         case 'pull': // Pull event has not event.id
         case 'untag':
-        case 'delete':
-        case 'remove':
+        case 'import':
         case 'prune':
-        case 'build':
+        case 'load':
             this.updateImages();
+            break;
+        case 'delete':
+            this.setState(prevState => {
+                const images = { ...prevState.images };
+                delete images[event.Actor.ID];
+
+                return { images };
+            });
             break;
         default:
             console.warn('Unhandled event type ', event.Type, event.Action);
@@ -256,51 +257,37 @@ class Application extends React.Component {
         switch (event.Action) {
         /* The following events do not need to trigger any state updates */
         case 'attach':
-        case 'exec':
-        case 'export':
-        case 'import':
         case 'resize':
-        case 'init':
         case 'kill':
-        case 'mount':
         case 'prune':
         case 'restart':
-        case 'sync':
-        case 'unmount':
-        case 'wait':
             break;
         /* The following events need only to update the Container list
-         * We do get the container affected in the event object but for
-         * now we 'll do a batch update
+         * We do get the container affected in the event object, but for
+         * now we'll do a batch update
          */
         case 'exec_start':
         case 'start':
             this.updateContainer(id, event);
             break;
-        case 'checkpoint':
-        case 'cleanup':
         case 'exec_create':
         case 'create':
-        case 'died':
         case 'die':
         case 'exec_die':
-        case 'exec_died': // HACK: pick up health check runs with older podman versions, see https://github.com/containers/podman/issues/19237
         case 'health_status':
         case 'pause':
-        case 'restore':
         case 'stop':
         case 'unpause':
         case 'rename': // rename event is available starting podman v4.1; until then the container does not get refreshed after renaming
             this.updateContainer(id, event);
             break;
 
-        case 'remove':
+        case 'destroy':
             this.setState(prevState => {
                 const containers = { ...prevState.containers };
                 delete containers[id];
-                let pods;
 
-                return { containers, pods };
+                return { containers };
             });
             break;
 
